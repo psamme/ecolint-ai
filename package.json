@@ -1,6 +1,6 @@
 {
   "name": "ecolint-ai",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "ESLint for wasteful AI compute. Scan AI application codebases for avoidable compute waste.",
   "type": "module",
   "license": "MIT",
