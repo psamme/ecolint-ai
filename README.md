@@ -2,7 +2,8 @@
 
 **ESLint for wasteful AI compute.**
 
-![status: v1](https://img.shields.io/badge/status-v1-brightgreen)
+![npm](https://img.shields.io/npm/v/ecolint-ai)
+![status: beta](https://img.shields.io/badge/status-beta-blue)
 ![type: static analysis](https://img.shields.io/badge/type-static%20analysis-blue)
 ![node: >=18](https://img.shields.io/badge/node-%3E%3D18-339933?logo=node.js&logoColor=white)
 ![language: TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white)
@@ -31,6 +32,46 @@ Environmental impact is a secondary, directional signal — see
 
 > **Trying it right now?** Jump to the [20-second demo](#20-second-demo) or see
 > [DEMO.md](DEMO.md) for a longer walkthrough.
+
+---
+
+## Quick start
+
+No install and no repo clone required — run EcoLint AI in any AI app repo with
+`npx`:
+
+```bash
+npx ecolint-ai scan --path .
+```
+
+For a shorter, high-level report:
+
+```bash
+npx ecolint-ai scan --path . --summary
+```
+
+For a Markdown report you can save or share:
+
+```bash
+npx ecolint-ai scan --path . --markdown --output ecolint-report.md
+```
+
+No API keys, no network calls — EcoLint only reads your source.
+
+---
+
+## Features
+
+- **Runs locally with `npx`, no API keys required** — nothing leaves your machine.
+- **Posts or updates a GitHub PR comment when used in CI** — a lightweight
+  code-review check for wasteful AI patterns.
+- **Flags AI-specific waste patterns** like uncached LLM calls, token bloat,
+  repeated embeddings, model overkill, missing token limits, and agent loops
+  without budgets.
+- **Provides waste categories, directional impact estimates, and fix recipes**
+  for each finding.
+- **Summary, terminal, Markdown, and JSON output** for humans and pipelines.
+- **Config-based ignores** for rules and paths, plus inline disable comments.
 
 ---
 
@@ -70,8 +111,49 @@ npx ecolint-ai scan --path examples/wasteful-ai-app --summary
 
 ![EcoLint AI summary output](assets/ecolint-demo.png)
 
+*Example summary output from the intentionally wasteful sample app.*
+
 Drop `--summary` for the full report: each finding with its file, waste category,
 directional impact, and a fix recipe.
+
+---
+
+## Use in pull requests
+
+EcoLint AI can run in GitHub Actions and **post or update a PR comment** with the
+report. This makes it usable as a lightweight code-review check for wasteful AI
+patterns — the report shows up right next to the code being reviewed.
+
+```yaml
+name: EcoLint AI
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  ecolint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: psamme/ecolint-ai@v0.2.1
+        with:
+          path: "."
+          min-severity: "low"
+          comment: "true"
+```
+
+- `comment: "true"` enables PR comments.
+- The action **updates its existing EcoLint comment instead of posting
+  duplicates**.
+- PR comments require the `pull-requests: write` permission (it uses GitHub's
+  built-in `GITHUB_TOKEN` — no custom token needed).
+- On non-`pull_request` events, EcoLint falls back to writing the **job summary**.
+
+Full details are in the [GitHub Action](#github-action) section below.
 
 ---
 
@@ -414,14 +496,34 @@ examples, not authoritative — verify quality for your use case.
 ## GitHub Action
 
 The [`action.yml`](action.yml) composite action can be consumed directly from
-any repo:
+any repo. It runs `npx ecolint-ai scan ...` under the hood and works in two modes:
+
+1. **Job summary mode** (default) — writes the Markdown report to the workflow
+   **job summary**.
+2. **PR comment mode** (`comment: "true"`) — additionally posts or updates a
+   comment on the pull request.
+
+### Inputs
+
+| Input | Default | Meaning |
+|---|---|---|
+| `path` | `.` | Path to scan |
+| `min-severity` | `low` | Minimum severity to report (`low` \| `medium` \| `high`) |
+| `format` | `markdown` | Display format in the workflow log (`markdown` \| `json`) |
+| `comment` | `false` | When `true`, post/update a PR comment on `pull_request` events |
+
+### Job summary mode
+
+The simplest setup — scan on every push and read the report from the job summary:
 
 ```yaml
 name: EcoLint AI
 
 on:
-  pull_request:
   push:
+
+permissions:
+  contents: read
 
 jobs:
   ecolint:
@@ -429,23 +531,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run EcoLint AI
-        uses: psamme/ecolint-ai@v0.2.0
+        uses: psamme/ecolint-ai@v0.2.1
         with:
           path: "."
-          min-severity: "low"
+          min-severity: "medium"
 ```
-
-Inputs:
-
-| Input | Default | Meaning |
-|---|---|---|
-| `path` | `.` | Path to scan |
-| `min-severity` | `low` | Minimum severity to report (`low` \| `medium` \| `high`) |
-| `format` | `markdown` | Display format in the workflow log (`markdown` \| `json`) |
-| `comment` | `false` | Post or update an EcoLint AI comment on pull requests |
-
-The action runs `npx ecolint-ai scan ...` under the hood and always writes the
-Markdown report to the **job summary**.
 
 ### PR comment mode
 
@@ -469,10 +559,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run EcoLint AI
-        uses: psamme/ecolint-ai@v0.2.0
+        uses: psamme/ecolint-ai@v0.2.1
         with:
           path: "."
           min-severity: "low"
+          format: "markdown"
           comment: "true"
 ```
 
@@ -626,7 +717,10 @@ action.yml          # GitHub Action
 
 ## Roadmap
 
+- SARIF output for code-scanning integration
+- Changed-files-only scans in CI
 - AST-based detection (fewer false positives than regex)
+- Framework-specific rules for the Vercel AI SDK, LangChain, and LlamaIndex
 - VS Code extension
 - Carbon-aware scheduling integration
 - Cloud bill import for prioritization

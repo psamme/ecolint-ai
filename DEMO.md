@@ -102,11 +102,16 @@ an agent verbatim. A good prompt:
 
 ## 8. GitHub Action + PR comments
 
-EcoLint ships as a composite GitHub Action. Set `comment: "true"` and grant
-`pull-requests: write` to have it post (and keep updating) a single report
-comment on each pull request:
+EcoLint can run in pull requests and **post or update a single PR comment** with
+the Markdown report. This is useful for code review because the report appears
+right next to the code being reviewed.
 
 ```yaml
+name: EcoLint AI
+
+on:
+  pull_request:
+
 permissions:
   contents: read
   pull-requests: write
@@ -116,15 +121,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: psamme/ecolint-ai@v0.2.0
+      - uses: psamme/ecolint-ai@v0.2.1
         with:
           path: "."
           comment: "true"
 ```
 
-It uses the built-in `GITHUB_TOKEN` (no custom token), updates its own comment
-instead of posting duplicates, and on non-PR events writes the report to the job
-summary instead. See [README → GitHub Action](README.md#github-action).
+- It **updates the same comment on re-runs** — no duplicate comments.
+- It uses a hidden marker (`<!-- ecolint-ai-report -->`) to find its own comment.
+- If it is **not running on a PR**, the report still appears in the **job
+  summary**.
+- **Very long reports are truncated** in the PR comment; the full report remains
+  in the job summary/artifact.
+
+It uses the built-in `GITHUB_TOKEN` (no custom token required). See
+[README → GitHub Action](README.md#github-action).
 
 ## 9. Known limitations
 
