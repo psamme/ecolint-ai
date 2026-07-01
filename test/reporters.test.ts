@@ -8,6 +8,15 @@ import type { Finding, ScanResult, WasteCategory } from "../src/types.js";
 
 const EXAMPLE_PATH = "examples/wasteful-ai-app";
 
+// picocolors emits ANSI color codes when it detects a CI environment, which
+// splits styled labels (e.g. `Rule:`) from their values. Strip them so terminal
+// assertions test the rendered text, not the coloring.
+// eslint-disable-next-line no-control-regex
+const ANSI = /\x1b\[[0-9;]*m/g;
+function terminalText(result: ScanResult): string {
+  return renderTerminalReport(result).replace(ANSI, "");
+}
+
 function makeFinding(overrides: Partial<Finding>): Finding {
   return {
     ruleId: "no-token-limit",
@@ -60,7 +69,7 @@ function makeResult(findings: Finding[]): ScanResult {
 describe("reporters", () => {
   it("terminal report includes score, category breakdown, and disclaimer", async () => {
     const result = await scan({ path: EXAMPLE_PATH });
-    const text = renderTerminalReport(result);
+    const text = terminalText(result);
     expect(text).toContain("Estimated avoidable compute waste score");
     expect(text).toContain("Findings by waste category");
     expect(text).toContain("Top fix opportunities");
@@ -102,14 +111,14 @@ describe("reporters", () => {
   });
 
   it("empty results still render a clean terminal report", () => {
-    const text = renderTerminalReport(makeResult([]));
+    const text = terminalText(makeResult([]));
     expect(text).toContain("No obvious AI compute waste patterns found");
   });
 
   describe("Suggested first pass", () => {
     it("terminal output includes a Suggested first pass section", async () => {
       const result = await scan({ path: EXAMPLE_PATH });
-      const text = renderTerminalReport(result);
+      const text = terminalText(result);
       expect(text).toContain("Suggested first pass:");
       expect(text).toContain("Add caching around repeated model calls.");
     });
@@ -146,7 +155,7 @@ describe("reporters", () => {
   describe("terminal noise control", () => {
     it("caps fix recipes at 3 bullets and defers the rest to markdown/JSON", async () => {
       const result = await scan({ path: EXAMPLE_PATH });
-      const text = renderTerminalReport(result);
+      const text = terminalText(result);
       expect(text).toContain("...plus 1 more in markdown/JSON output.");
       // A 4th recipe step should not appear in the terminal output.
       expect(text).not.toContain(
@@ -164,14 +173,14 @@ describe("reporters", () => {
 
     it("labels multiple same-rule findings in one file", async () => {
       const result = await scan({ path: EXAMPLE_PATH });
-      const text = renderTerminalReport(result);
+      const text = terminalText(result);
       // route.ts has two no-llm-cache findings.
       expect(text).toContain("(2 in this file)");
     });
 
     it("shows related-finding awareness for multi-finding files", async () => {
       const result = await scan({ path: EXAMPLE_PATH });
-      const text = renderTerminalReport(result);
+      const text = terminalText(result);
       expect(text).toContain("Also flagged in this file:");
     });
 
@@ -181,9 +190,12 @@ describe("reporters", () => {
         makeFinding({ line: 2 }),
         makeFinding({ line: 3 }),
       ];
-      const text = renderTerminalReport(makeResult(findings));
-      // Only two of the three should render as detailed findings.
-      const shown = text.split("Rule: no-token-limit").length - 1;
+      const text = terminalText(makeResult(findings));
+      // Only two of the three should render as detailed findings; count the
+      // per-finding "Rule:" lines rather than substring-matching styled text.
+      const shown = text
+        .split("\n")
+        .filter((line) => line.trim() === "Rule: no-token-limit").length;
       expect(shown).toBe(2);
       expect(text).toContain("...plus 1 more no-token-limit findings in this file.");
     });

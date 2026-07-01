@@ -19,7 +19,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: "npm"
 
       - name: Install dependencies
@@ -31,7 +31,10 @@ jobs:
       - name: Run tests
         run: npm test
 
+      # Generate the report even if a prior step (e.g. tests) fails, so the
+      # summary and artifact steps below always have a file to work with.
       - name: Run EcoLint AI on the example app
+        if: always()
         run: |
           node dist/cli.js scan \
             --path examples/wasteful-ai-app \
@@ -40,7 +43,12 @@ jobs:
 
       - name: Publish report to job summary
         if: always()
-        run: cat ecolint-report.md >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          if [ -f ecolint-report.md ]; then
+            cat ecolint-report.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No ecolint-report.md was generated." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Upload report artifact
         if: always()
@@ -48,3 +56,4 @@ jobs:
         with:
           name: ecolint-report
           path: ecolint-report.md
+          if-no-files-found: warn
