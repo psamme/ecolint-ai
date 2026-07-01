@@ -2,12 +2,17 @@ name: EcoLint AI (local)
 
 # Runs EcoLint AI on the example app using the repo's own source, without
 # needing the package to be published to npm. Writes a Markdown report into the
-# GitHub Actions job summary.
+# GitHub Actions job summary, and — on pull requests — posts/updates a PR comment.
 
 on:
   push:
   pull_request:
   workflow_dispatch:
+
+# pull-requests: write lets the built-in GITHUB_TOKEN post the PR comment below.
+permissions:
+  contents: read
+  pull-requests: write
 
 jobs:
   ecolint:
@@ -57,3 +62,52 @@ jobs:
           name: ecolint-report
           path: ecolint-report.md
           if-no-files-found: warn
+
+      # On pull requests, post or update a single EcoLint AI comment. Mirrors the
+      # comment logic in action.yml (buildCommentBody in src/prComment.ts).
+      - name: Post or update PR comment
+        if: ${{ always() && github.event_name == 'pull_request' }}
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const fs = require("fs");
+            const MARKER = "<!-- ecolint-ai-report -->";
+            const MAX_LENGTH = 60000;
+
+            let report;
+            try {
+              report = fs.readFileSync("ecolint-report.md", "utf8").trimEnd();
+            } catch {
+              report = "# EcoLint AI Report\n\nNo report was generated.";
+            }
+
+            let body;
+            if (report.length <= MAX_LENGTH) {
+              body = `${MARKER}\n${report}\n`;
+            } else {
+              const slice = report.slice(0, MAX_LENGTH);
+              const lastNewline = slice.lastIndexOf("\n");
+              const truncated = (lastNewline > 0 ? slice.slice(0, lastNewline) : slice).trimEnd();
+              const note =
+                "> ⚠️ This report was truncated to fit a PR comment. " +
+                "See the full EcoLint AI report in the workflow **job summary**.";
+              body = `${MARKER}\n${truncated}\n\n---\n\n${note}\n`;
+            }
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number,
+              per_page: 100,
+            });
+            const existing = comments.find((c) => c.body && c.body.includes(MARKER));
+
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }

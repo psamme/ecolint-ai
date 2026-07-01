@@ -435,9 +435,58 @@ jobs:
           min-severity: "low"
 ```
 
-Inputs: `path` (default `.`), `min-severity` (default `low`), `format` (default
-`markdown`). The action runs `npx ecolint-ai scan ...` under the hood. A
-PR-comment bot is on the roadmap.
+Inputs:
+
+| Input | Default | Meaning |
+|---|---|---|
+| `path` | `.` | Path to scan |
+| `min-severity` | `low` | Minimum severity to report (`low` \| `medium` \| `high`) |
+| `format` | `markdown` | Display format in the workflow log (`markdown` \| `json`) |
+| `comment` | `false` | Post or update an EcoLint AI comment on pull requests |
+
+The action runs `npx ecolint-ai scan ...` under the hood and always writes the
+Markdown report to the **job summary**.
+
+### PR comment mode
+
+Set `comment: "true"` to have EcoLint post its Markdown report as a pull-request
+comment. Grant `pull-requests: write` so the built-in `GITHUB_TOKEN` can comment
+— no custom token is required.
+
+```yaml
+name: EcoLint AI
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  ecolint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run EcoLint AI
+        uses: psamme/ecolint-ai@v0.2.0
+        with:
+          path: "."
+          min-severity: "low"
+          comment: "true"
+```
+
+Notes:
+
+- **PR comments require `pull-requests: write` permission.** Without it the
+  comment step fails to post.
+- **The action updates its existing comment instead of posting duplicates.** It
+  finds its own comment via a stable marker (`<!-- ecolint-ai-report -->`) and
+  edits it in place on each run.
+- **On non-`pull_request` events** (e.g. `push`) EcoLint does not fail — it skips
+  the comment and writes the report to the **job summary** instead.
+- **If a report is too long for a PR comment**, EcoLint posts the front-loaded
+  summary and top findings and notes that the full report is in the job summary.
 
 > Prefer not to depend on the published action? The included workflow at
 > [`.github/workflows/ecolint-local.yml`](.github/workflows/ecolint-local.yml)
@@ -579,7 +628,6 @@ action.yml          # GitHub Action
 
 - AST-based detection (fewer false positives than regex)
 - VS Code extension
-- PR comments from the GitHub Action
 - Carbon-aware scheduling integration
 - Cloud bill import for prioritization
 - Configurable rules and thresholds

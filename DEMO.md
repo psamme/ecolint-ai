@@ -100,7 +100,33 @@ an agent verbatim. A good prompt:
 > bound the context, right-size the model, set token limits, and budget the
 > agent loop — without changing the feature's behavior. Then I'll re-run EcoLint."
 
-## 8. Known limitations
+## 8. GitHub Action + PR comments
+
+EcoLint ships as a composite GitHub Action. Set `comment: "true"` and grant
+`pull-requests: write` to have it post (and keep updating) a single report
+comment on each pull request:
+
+```yaml
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  ecolint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: psamme/ecolint-ai@v0.2.0
+        with:
+          path: "."
+          comment: "true"
+```
+
+It uses the built-in `GITHUB_TOKEN` (no custom token), updates its own comment
+instead of posting duplicates, and on non-PR events writes the report to the job
+summary instead. See [README → GitHub Action](README.md#github-action).
+
+## 9. Known limitations
 
 - Heuristic/static analysis, not a perfect AST analyzer.
 - Impact numbers are **directional estimates**, not measured values.

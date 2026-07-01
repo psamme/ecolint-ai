@@ -26,6 +26,13 @@ export { renderTerminalReport } from "./reporters/terminalReporter.js";
 export { renderJsonReport } from "./reporters/jsonReporter.js";
 export { renderMarkdownReport } from "./reporters/markdownReporter.js";
 
+export {
+  ECOLINT_COMMENT_MARKER,
+  MAX_COMMENT_LENGTH,
+  buildCommentBody,
+  type CommentBodyOptions,
+} from "./prComment.js";
+
 export { IMPACT_DISCLAIMER, impactLine, makeImpact } from "./impact.js";
 export {
   DEFAULT_CONFIG,
