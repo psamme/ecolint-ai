@@ -23,6 +23,18 @@ usage, and unbounded generation, then provides **waste categories**,
 
 ---
 
+## Example output
+
+Running EcoLint AI on the intentionally wasteful example app:
+
+```bash
+npm run scan:example
+```
+
+![EcoLint AI example output](assets/ecolint-demo.png)
+
+---
+
 ## What it does
 
 EcoLint AI answers one question a developer has right before shipping an AI
@@ -30,31 +42,13 @@ feature:
 
 > "Before I ship this AI feature, am I doing anything obviously wasteful?"
 
-And it responds with the files, the waste category, why it matters, and a fix
-recipe:
+And it responds with a prioritized code-review report:
 
-```txt
-EcoLint AI
-
-Scanned 5 files.
-Found 12 potential AI compute-waste issues.
-
-Estimated avoidable compute waste score: 70/100
-
-Findings by waste category:
-- Repeated inference: 4
-- Background compute drift: 2
-- Unbounded generation: 2
-- Multimodal cost explosion: 1
-- Redundant embedding: 1
-- Token bloat: 1
-- Model overkill: 1
-
-Top fix opportunities:
-1. Cap repeated image generation in lib/image.ts — 90/100
-2. Add caching / reduce repeated calls in app/api/generate/route.ts — 85/100
-3. Add caching / reduce repeated calls in lib/classify.ts — 85/100
-```
+- files and line numbers for each issue
+- waste categories like repeated inference, token bloat, and model overkill
+- directional compute / carbon / water / cost impact estimates
+- top fix opportunities
+- concrete fix recipes for each finding
 
 ---
 
@@ -62,8 +56,7 @@ Top fix opportunities:
 
 Shipping AI features is easy; shipping them *efficiently* is not. Uncached
 calls, full-history prompts, and top-tier models used for trivial tasks are easy
-to introduce and hard to notice in review. They quietly become API bills,
-latency, and unnecessary compute demand.
+to introduce and hard to notice in review. They quietly turn into higher API bills, slower responses, and unnecessary compute demand.
 
 EcoLint AI is a **prevention layer for AI code review**. It prioritizes wasteful
 AI code patterns and estimates their potential impact directionally, so you can
@@ -145,7 +138,7 @@ ecolint-ai init                                   # create a sample config
 
 ---
 
-## Example output
+## Report Formats
 
 Terminal (default), Markdown (`--markdown`), and JSON (`--json`) reporters are
 all supported. The JSON shape:
@@ -424,7 +417,7 @@ action.yml          # GitHub Action
 
 ---
 
-## Portfolio description
+## Project Summary
 
 **Project-card (one sentence):**
 
@@ -432,21 +425,6 @@ action.yml          # GitHub Action
 > compute" — that statically scans AI app codebases for avoidable compute-waste
 > patterns and reports waste categories, directional impact estimates, and fix
 > recipes.
-
-**Resume / portfolio (longer):**
-
-> EcoLint AI is a static-analysis devtool that helps teams catch avoidable AI
-> compute waste during code review, before it becomes API bills or unnecessary
-> infrastructure demand. Built in strict TypeScript, it ships a `commander`-based
-> CLI, a reusable library API, and a GitHub Action, with eight heuristic rules
-> (uncached LLM calls, oversized context, model overkill, repeated embeddings,
-> image-generation loops, frequent cron jobs, missing token limits, and
-> sequential calls). Each finding is tagged with a waste category, a directional
-> compute/carbon/water/cost impact estimate, and a concrete fix recipe, and is
-> rendered through terminal, JSON, and Markdown reporters. The project is
-> deliberately scoped and honest: it uses transparent heuristics and directional
-> estimates rather than claiming to measure exact emissions, and is covered by a
-> Vitest suite plus runnable "wasteful" and "cleaner" example apps.
 
 ---
 
