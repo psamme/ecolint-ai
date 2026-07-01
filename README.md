@@ -146,22 +146,22 @@ them.
 
 ## Installation
 
-```bash
-npm install
-npm run build
-```
-
-Then run the built CLI:
+EcoLint AI is published on npm. The fastest way to try it — no install:
 
 ```bash
-node dist/cli.js scan --path examples/wasteful-ai-app
+npx ecolint-ai scan --path .
 ```
 
-Or use the dev script (no build step, via `tsx`):
+Or install it globally / add it to a project:
 
 ```bash
-npm run dev -- scan --path examples/wasteful-ai-app
+npm i -g ecolint-ai          # global CLI: `ecolint-ai scan --path .`
+npm i -D ecolint-ai          # dev dependency in a project
 ```
+
+No API keys, no network calls — it only reads your source.
+
+> Building from source instead? See [Development](#development).
 
 ---
 
@@ -413,27 +413,8 @@ examples, not authoritative — verify quality for your use case.
 
 ## GitHub Action
 
-### Use inside this repo before publishing
-
-Because the package isn't on npm yet, the included workflow at
-[`.github/workflows/ecolint-local.yml`](.github/workflows/ecolint-local.yml)
-runs EcoLint from the repo's own source and writes the report into the GitHub
-Actions **job summary**. It does:
-
-```bash
-npm ci
-npm run build
-node dist/cli.js scan --path examples/wasteful-ai-app --markdown --output ecolint-report.md
-cat ecolint-report.md >> "$GITHUB_STEP_SUMMARY"
-```
-
-No npm publish and no PR-comment bot required — the report shows up in the
-Actions run summary and as an uploaded artifact.
-
-### Use as a published GitHub Action
-
-Once `ecolint-ai` is published to npm, the [`action.yml`](action.yml) composite
-action can be consumed directly from another repo:
+The [`action.yml`](action.yml) composite action can be consumed directly from
+any repo:
 
 ```yaml
 name: EcoLint AI
@@ -448,15 +429,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run EcoLint AI
-        uses: your-username/ecolint-ai@v1
+        uses: psamme/ecolint-ai@v0.2.0
         with:
           path: "."
           min-severity: "low"
 ```
 
 Inputs: `path` (default `.`), `min-severity` (default `low`), `format` (default
-`markdown`). The action runs `npx ecolint-ai scan ...`, which requires the
-package to be published. A PR-comment bot is on the roadmap.
+`markdown`). The action runs `npx ecolint-ai scan ...` under the hood. A
+PR-comment bot is on the roadmap.
+
+> Prefer not to depend on the published action? The included workflow at
+> [`.github/workflows/ecolint-local.yml`](.github/workflows/ecolint-local.yml)
+> runs EcoLint from the repo's own source and writes the report into the Actions
+> **job summary**.
 
 ---
 
