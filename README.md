@@ -61,13 +61,17 @@ classification task, and a missing output token limit — each with a fix recipe
 
 ## Example output
 
-Running EcoLint AI on the intentionally wasteful example app:
+The high-level summary from scanning the intentionally wasteful example app
+(`--summary` skips the detailed findings):
 
 ```bash
-npm run scan:example
+npx ecolint-ai scan --path examples/wasteful-ai-app --summary
 ```
 
-![EcoLint AI example output](assets/ecolint-demo.png)
+![EcoLint AI summary output](assets/ecolint-demo.png)
+
+Drop `--summary` for the full report: each finding with its file, waste category,
+directional impact, and a fix recipe.
 
 ---
 
