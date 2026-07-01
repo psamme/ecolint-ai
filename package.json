@@ -1,0 +1,56 @@
+{
+  "name": "ecolint-ai",
+  "version": "0.1.0",
+  "description": "ESLint for wasteful AI compute. Scan AI application codebases for avoidable compute waste.",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "ai",
+    "llm",
+    "linter",
+    "static-analysis",
+    "sustainability",
+    "carbon",
+    "compute",
+    "cli"
+  ],
+  "bin": {
+    "ecolint-ai": "dist/cli.js"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "action.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "scan:example": "tsx src/cli.ts scan --path examples/wasteful-ai-app",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "fast-glob": "^3.3.2",
+    "picocolors": "^1.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

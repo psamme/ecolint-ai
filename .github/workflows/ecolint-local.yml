@@ -1,0 +1,50 @@
+name: EcoLint AI (local)
+
+# Runs EcoLint AI on the example app using the repo's own source, without
+# needing the package to be published to npm. Writes a Markdown report into the
+# GitHub Actions job summary.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  ecolint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Run tests
+        run: npm test
+
+      - name: Run EcoLint AI on the example app
+        run: |
+          node dist/cli.js scan \
+            --path examples/wasteful-ai-app \
+            --markdown \
+            --output ecolint-report.md
+
+      - name: Publish report to job summary
+        if: always()
+        run: cat ecolint-report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ecolint-report
+          path: ecolint-report.md

@@ -1,0 +1,39 @@
+name: "EcoLint AI"
+description: "ESLint for wasteful AI compute. Scan a codebase for avoidable AI compute waste."
+author: "EcoLint AI contributors"
+branding:
+  icon: "wind"
+  color: "green"
+
+inputs:
+  path:
+    description: "Path to scan"
+    required: false
+    default: "."
+  min-severity:
+    description: "Minimum severity to report (low | medium | high)"
+    required: false
+    default: "low"
+  format:
+    description: "Report format (markdown | json)"
+    required: false
+    default: "markdown"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Run EcoLint AI
+      shell: bash
+      env:
+        INPUT_PATH: ${{ inputs.path }}
+        INPUT_MIN_SEVERITY: ${{ inputs.min-severity }}
+        INPUT_FORMAT: ${{ inputs.format }}
+      run: |
+        FLAG="--markdown"
+        if [ "$INPUT_FORMAT" = "json" ]; then
+          FLAG="--json"
+        fi
+        npx --yes ecolint-ai scan \
+          --path "$INPUT_PATH" \
+          $FLAG \
+          --min-severity "$INPUT_MIN_SEVERITY"

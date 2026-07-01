@@ -1,0 +1,10 @@
+node_modules/
+dist/
+build/
+coverage/
+.next/
+*.log
+.DS_Store
+ecolint-report.md
+ecolint-report.json
+*.tsbuildinfo
