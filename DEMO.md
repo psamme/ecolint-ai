@@ -1,10 +1,10 @@
 # EcoLint AI — Demo
 
-**ESLint for wasteful AI compute.**
+**EcoLint AI is ESLint for wasteful AI compute.**
 
-EcoLint AI is a static analysis tool that helps developers find avoidable AI
-compute waste before it ships — uncached LLM calls, oversized prompts, repeated
-embeddings, overpowered models, unbounded generation, and more.
+It statically scans AI app codebases for patterns like uncached LLM calls, token
+bloat, repeated embeddings, model overkill, missing token limits, and unbudgeted
+agent loops — before they turn into API bills, latency, or unnecessary compute.
 
 > EcoLint AI uses static heuristics and directional impact estimates. It does
 > not measure exact emissions, water usage, or infrastructure-level energy
@@ -12,14 +12,38 @@ embeddings, overpowered models, unbounded generation, and more.
 
 ---
 
-## 1. Install and build
+## 1. Quickest try (npx)
 
 ```bash
-npm install
-npm run build
+npx ecolint-ai scan --path .
 ```
 
-## 2. Scan the intentionally wasteful example
+No install, no API keys, no network calls — it just reads your source.
+
+## 2. 20-second copy/paste demo
+
+```bash
+mkdir ecolint-demo && cd ecolint-demo
+cat > bad.ts <<'EOF'
+import OpenAI from "openai";
+
+const openai = new OpenAI();
+
+export async function classify(text: string) {
+  return openai.chat.completions.create({
+    model: "gpt-4o",
+    messages: [{ role: "user", content: `classify this: ${text}` }]
+  });
+}
+EOF
+
+npx ecolint-ai scan --path .
+```
+
+You'll see an uncached LLM call, a top-tier model used for classification, and a
+missing output token limit — each with a fix recipe.
+
+## 3. Scan the intentionally wasteful example
 
 ```bash
 npm run scan:example
@@ -27,84 +51,60 @@ npm run scan:example
 node dist/cli.js scan --path examples/wasteful-ai-app
 ```
 
-You should see ~12 findings across all seven waste categories, an "Estimated
-avoidable compute waste score", a category breakdown, and the top fix
-opportunities.
+Expect a dozen-plus findings across the waste categories, an "Estimated
+avoidable compute waste score", a category breakdown, and top fix opportunities.
 
-## 3. Scan the cleaner example
+## 4. Scan the cleaner example
 
 ```bash
 node dist/cli.js scan --path examples/cleaner-ai-app
 ```
 
-This one applies EcoLint's recommendations (caching, bounded context,
-right-sized models, token limits, embedding reuse) and should scan **clean**.
+Same features written with caching, bounded context, right-sized models, token
+limits, embedding reuse, and a rate limit — it should scan **clean**.
 
-## 4. Expected difference
+## 5. Summary mode (high-level only)
 
-| Example | Findings | Why |
-|---|---|---|
-| `examples/wasteful-ai-app` | ~12 across 7 categories | uncached calls, full history, `gpt-4o` for classification, embeddings in a loop, image gen in a retry loop, every-minute cron, no token limits, sequential calls |
-| `examples/cleaner-ai-app` | 0 | caching, `.slice(-6)` context, `gpt-4o-mini`, `max_tokens`, `embedIfMissing` persistence check |
+```bash
+node dist/cli.js scan --path examples/wasteful-ai-app --summary
+```
 
-The point of the demo: the same feature set, written two ways, produces a very
-different waste profile — and EcoLint catches the difference statically.
+Shows files scanned, total findings, the waste score, category breakdown, top
+fix opportunities, and a suggested first pass — without the detailed findings.
 
-## 5. Generate a Markdown report
+## 6. Markdown report
 
 ```bash
 node dist/cli.js scan --path examples/wasteful-ai-app --markdown --output ecolint-report.md
 ```
 
-Example (trimmed):
+Markdown and JSON reports always include **every** finding (the terminal caps
+detailed findings at 10 by default — use `--max-findings 0` to see them all).
 
-```md
-# EcoLint AI Report
+## 7. Demo loop with Claude Code / Codex
 
-EcoLint AI scanned **5 files** and found **12 potential AI compute-waste issues**.
-
-## AI Waste Impact Tracker
-
-Estimated avoidable compute waste score: **70/100**
-
-> EcoLint AI uses static heuristics and directional impact estimates...
-
-## Findings by Waste Category
-
-| Waste category | Findings |
-|---|---:|
-| Repeated inference | 4 |
-| Background compute drift | 2 |
-| ...
-
-## Top Fix Opportunities
-
-1. Cap repeated image generation in lib/image.ts — 90/100
-2. Add caching / reduce repeated calls in app/api/generate/route.ts — 85/100
-3. Add caching / reduce repeated calls in lib/classify.ts — 85/100
-```
-
----
-
-## Demo loop with Claude Code
-
-EcoLint AI pairs naturally with AI-assisted coding tools like Claude Code or
-Codex. Use it as a fast feedback loop:
+EcoLint pairs naturally with AI-assisted coding tools:
 
 ```txt
 1. Build an AI feature.
-2. Run `npm run scan:example` or `ecolint-ai scan --path .`.
-3. Paste the EcoLint findings back into Claude Code.
-4. Ask Claude Code to fix high-impact findings without changing behavior.
-5. Re-run EcoLint to verify reduced waste.
+2. Run EcoLint (`npx ecolint-ai scan --path .`).
+3. Paste the EcoLint findings into Claude Code / Codex.
+4. Ask it to fix the high-impact findings without changing behavior.
+5. Re-run EcoLint to confirm fewer findings and a lower score.
 ```
 
-Because each finding ships with a **fix recipe** (a concrete remediation
-checklist), the findings are easy to hand to an agent verbatim. A good prompt:
+Because each finding ships with a **fix recipe**, findings are easy to hand to
+an agent verbatim. A good prompt:
 
 > "Here is the EcoLint AI report. Fix the high-impact findings — add caching,
-> bound the context, right-size the model, and set token limits — without
-> changing the feature's behavior. Then I'll re-run EcoLint to confirm."
+> bound the context, right-size the model, set token limits, and budget the
+> agent loop — without changing the feature's behavior. Then I'll re-run EcoLint."
 
-Re-running EcoLint after the fixes should show a lower waste score and fewer
-findings, giving you a measurable-feeling before/after in seconds.
+## 8. Known limitations
+
+- Heuristic/static analysis, not a perfect AST analyzer.
+- Impact numbers are **directional estimates**, not measured values.
+- May produce false positives or miss dynamic patterns (see
+  [README → Managing false positives](README.md#managing-false-positives)).
+- Not runtime telemetry, and not a measure of exact emissions or water usage —
+  it complements runtime trackers like CodeCarbon and EcoLogits.

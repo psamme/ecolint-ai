@@ -7,6 +7,8 @@ import { imageGenerationLoopRule } from "./imageGenerationLoop.js";
 import { frequentCronRule } from "./frequentCron.js";
 import { noTokenLimitRule } from "./noTokenLimit.js";
 import { sequentialLlmCallsRule } from "./sequentialLlmCalls.js";
+import { agentLoopWithoutBudgetRule } from "./agentLoopWithoutBudget.js";
+import { missingRateLimitRule } from "./missingRateLimit.js";
 
 export const rules: Rule[] = [
   noLlmCacheRule,
@@ -17,6 +19,8 @@ export const rules: Rule[] = [
   frequentCronRule,
   noTokenLimitRule,
   sequentialLlmCallsRule,
+  agentLoopWithoutBudgetRule,
+  missingRateLimitRule,
 ];
 
 export {
@@ -28,4 +32,6 @@ export {
   frequentCronRule,
   noTokenLimitRule,
   sequentialLlmCallsRule,
+  agentLoopWithoutBudgetRule,
+  missingRateLimitRule,
 };

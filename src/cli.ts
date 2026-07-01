@@ -1,15 +1,30 @@
 #!/usr/bin/env node
-import { promises as fs } from "node:fs";
+import { promises as fs, readFileSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import pc from "picocolors";
 import { CONFIG_FILENAME, SAMPLE_CONFIG, loadConfig } from "./config.js";
 import { scan } from "./scanner.js";
-import { renderTerminalReport } from "./reporters/terminalReporter.js";
+import {
+  renderTerminalReport,
+  type TerminalReportOptions,
+} from "./reporters/terminalReporter.js";
 import { renderJsonReport } from "./reporters/jsonReporter.js";
 import { renderMarkdownReport } from "./reporters/markdownReporter.js";
 import type { Provider } from "./models.js";
 import type { ScanResult, Severity } from "./types.js";
+
+/** Read the package version so `--version` always matches package.json. */
+function readVersion(): string {
+  try {
+    const pkgPath = fileURLToPath(new URL("../package.json", import.meta.url));
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as { version?: string };
+    return pkg.version ?? "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
 
 const VALID_SEVERITIES: Severity[] = ["low", "medium", "high"];
 const VALID_PROVIDERS: Provider[] = [
@@ -27,7 +42,19 @@ type ScanCliOptions = {
   output?: string;
   minSeverity?: string;
   provider?: string;
+  maxFindings?: string;
+  summary?: boolean;
 };
+
+function parseMaxFindings(value: string): number {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 0) {
+    throw new Error(
+      `Invalid --max-findings "${value}". Expected a non-negative integer (0 = show all).`,
+    );
+  }
+  return n;
+}
 
 function parseSeverity(value: string): Severity {
   const lower = value.toLowerCase();
@@ -51,14 +78,18 @@ function parseProvider(value: string): Provider {
 
 type Format = "terminal" | "json" | "markdown";
 
-function renderFor(format: Format, result: ScanResult): string {
+function renderFor(
+  format: Format,
+  result: ScanResult,
+  terminalOptions: TerminalReportOptions = {},
+): string {
   switch (format) {
     case "json":
       return renderJsonReport(result);
     case "markdown":
       return renderMarkdownReport(result);
     case "terminal":
-      return renderTerminalReport(result);
+      return renderTerminalReport(result, terminalOptions);
   }
 }
 
@@ -107,6 +138,7 @@ async function runScan(options: ScanCliOptions): Promise<void> {
       : "terminal";
 
   // When writing to a file, default to markdown unless json is explicitly set.
+  // File reports (markdown/JSON) always include every finding.
   if (options.output) {
     const fileFormat: Format = options.json ? "json" : "markdown";
     const content = renderFor(fileFormat, result);
@@ -120,7 +152,14 @@ async function runScan(options: ScanCliOptions): Promise<void> {
     return;
   }
 
-  console.log(renderFor(format, result));
+  const terminalOptions: TerminalReportOptions = {
+    summary: options.summary,
+    maxFindings: options.maxFindings
+      ? parseMaxFindings(options.maxFindings)
+      : undefined,
+  };
+
+  console.log(renderFor(format, result, terminalOptions));
 }
 
 async function runInit(): Promise<void> {
@@ -143,7 +182,7 @@ async function main(): Promise<void> {
   program
     .name("ecolint-ai")
     .description("ESLint for wasteful AI compute. Scan for avoidable AI compute waste.")
-    .version("0.1.0");
+    .version(readVersion());
 
   program
     .command("scan")
@@ -160,6 +199,11 @@ async function main(): Promise<void> {
       "--provider <name>",
       "Provider hint for model suggestions (openai | anthropic | google | mistral). Overrides config.",
     )
+    .option(
+      "--max-findings <number>",
+      "Max detailed findings to show in the terminal (0 = show all). Default 10.",
+    )
+    .option("--summary", "Show only the high-level summary (no detailed findings).")
     .action(async (opts: ScanCliOptions) => {
       await runScan(opts);
     });

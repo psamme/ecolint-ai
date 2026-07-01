@@ -1,18 +1,29 @@
 {
   "name": "ecolint-ai",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "ESLint for wasteful AI compute. Scan AI application codebases for avoidable compute waste.",
   "type": "module",
   "license": "MIT",
+  "homepage": "https://github.com/psamme/ecolint-ai#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/psamme/ecolint-ai.git"
+  },
+  "bugs": {
+    "url": "https://github.com/psamme/ecolint-ai/issues"
+  },
   "keywords": [
     "ai",
     "llm",
+    "cli",
     "linter",
     "static-analysis",
+    "developer-tools",
     "sustainability",
-    "carbon",
-    "compute",
-    "cli"
+    "green-software",
+    "code-quality",
+    "github-actions",
+    "typescript"
   ],
   "bin": {
     "ecolint-ai": "dist/cli.js"
@@ -23,6 +34,7 @@
     "dist",
     "action.yml",
     "README.md",
+    "DEMO.md",
     "LICENSE"
   ],
   "exports": {

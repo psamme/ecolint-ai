@@ -5,7 +5,7 @@ import { IGNORE_GLOBS, SCANNABLE_EXTENSIONS } from "./config.js";
 import { SEVERITY_WEIGHT, suggestedFirstPass } from "./impact.js";
 import type { Provider } from "./models.js";
 import { rules } from "./rules/index.js";
-import { dedupeFindings, isTestFile } from "./rules/helpers.js";
+import { applyInlineDisables, dedupeFindings, isTestFile } from "./rules/helpers.js";
 import type {
   Finding,
   RuleContext,
@@ -96,7 +96,8 @@ export function runRules(
   const controlled = isTestFile(file.path)
     ? findings.map(softenIfHighImpactTest)
     : findings;
-  return dedupeFindings(controlled);
+  // Honor inline `// ecolint-disable...` directives before deduping.
+  return dedupeFindings(applyInlineDisables(file, controlled));
 }
 
 function softenIfHighImpactTest(finding: Finding): Finding {

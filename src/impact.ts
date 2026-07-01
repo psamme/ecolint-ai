@@ -17,6 +17,9 @@ const RULE_ACTION: Record<string, string> = {
   "expensive-model-simple-task":
     "Use smaller model tiers for simple classification or extraction tasks.",
   "sequential-llm-calls": "Combine, cache, or parallelize multi-call LLM flows.",
+  "agent-loop-without-budget":
+    "Add step, time, and token/cost budgets to agent loops.",
+  "missing-rate-limit": "Add rate limits or quotas to public AI routes.",
 };
 
 /**

@@ -9,17 +9,53 @@
 ![tests: vitest](https://img.shields.io/badge/tests-vitest-6E9F18?logo=vitest&logoColor=white)
 ![license: MIT](https://img.shields.io/badge/license-MIT-black)
 
-EcoLint AI is a static analysis tool that helps developers find avoidable AI
-compute waste before it ships. It scans AI app codebases for patterns like
-uncached LLM calls, oversized prompts, repeated embeddings, overpowered model
-usage, and unbounded generation, then provides **waste categories**,
-**directional impact estimates**, and **concrete fix recipes**.
+EcoLint AI is a **static analysis tool for AI app efficiency**. It catches
+patterns like uncached LLM calls, token bloat, repeated embeddings, model
+overkill, and missing token limits before they become API bills, latency, or
+unnecessary compute demand.
+
+It runs entirely on your source code:
+
+- **Static analysis** — regex/heuristic scanning of your codebase.
+- **No API keys** and **no network calls** — nothing leaves your machine.
+- **No exact emissions or water measurement** — only directional estimates.
+- Helps you **find avoidable AI compute waste before shipping**.
+
+The primary win is practical: **cost, latency, reliability, and code review**.
+Environmental impact is a secondary, directional signal — see
+[Limitations](#limitations).
 
 > **EcoLint AI uses static heuristics and directional impact estimates. It does
 > not measure exact emissions, water usage, or infrastructure-level energy
 > consumption.**
 
-> **Trying it right now?** See [DEMO.md](DEMO.md) for a 2-minute walkthrough.
+> **Trying it right now?** Jump to the [20-second demo](#20-second-demo) or see
+> [DEMO.md](DEMO.md) for a longer walkthrough.
+
+---
+
+## 20-second demo
+
+```bash
+mkdir ecolint-demo && cd ecolint-demo
+cat > bad.ts <<'EOF'
+import OpenAI from "openai";
+
+const openai = new OpenAI();
+
+export async function classify(text: string) {
+  return openai.chat.completions.create({
+    model: "gpt-4o",
+    messages: [{ role: "user", content: `classify this: ${text}` }]
+  });
+}
+EOF
+
+npx ecolint-ai scan --path .
+```
+
+You'll get a prioritized report: an uncached LLM call, a top-tier model on a
+classification task, and a missing output token limit — each with a fix recipe.
 
 ---
 
@@ -64,21 +100,32 @@ fix the expensive ones first.
 
 ---
 
-## How EcoLint AI is different
+## How this differs from runtime trackers
 
-Most AI sustainability tools focus on estimating impact *after* usage happens.
-Browser extensions can estimate the impact of chatbot conversations, and runtime
-libraries can estimate emissions from workloads or API calls.
+EcoLint AI does not measure actual emissions or API usage. Runtime tools like
+CodeCarbon, EcoLogits, browser-based AI impact trackers, and other carbon
+calculators are better for measuring usage *after* it happens.
 
-EcoLint AI works earlier. It scans source code before deployment and flags
-patterns that may create avoidable AI compute waste, such as uncached LLM calls,
-oversized prompts, repeated embeddings, overpowered models for simple tasks, and
-repeated image generation.
+EcoLint AI works **earlier in the workflow**. It scans source code for AI app
+patterns that often lead to unnecessary compute, cost, and latency **before the
+code ships**. Think of it as a **prevention layer** that runs alongside your
+tests and linters — it **complements** runtime trackers, it is **not a
+replacement** for them.
 
-EcoLint AI is not a replacement for runtime emissions trackers. It is a
-prevention layer for AI code review. It complements tools like runtime emissions
-trackers, LLM impact calculators, and carbon accounting libraries (for example,
-CodeCarbon and EcoLogits).
+Use both: EcoLint to catch avoidable patterns in review, and a runtime tracker
+to measure what actually ran in production.
+
+### Comparison
+
+| Tool type | Examples | When it works | EcoLint AI difference |
+|---|---|---|---|
+| Runtime emissions tracking | CodeCarbon, EcoLogits | During execution/API calls | EcoLint scans code before runtime |
+| Browser AI usage tracking | AI Wattch-style tools | During chatbot usage | EcoLint targets developers building AI apps |
+| Cost dashboards | Cloud/provider billing tools | After usage accumulates | EcoLint flags waste patterns before shipping |
+| General linters | ESLint, Biome | During development | EcoLint focuses specifically on AI compute-waste patterns |
+
+EcoLint is complementary to these tools, not a superior replacement for any of
+them.
 
 ---
 
@@ -124,7 +171,11 @@ ecolint-ai scan --json                           # JSON to stdout
 ecolint-ai scan --markdown                       # Markdown to stdout
 ecolint-ai scan --output ecolint-report.md       # write a report file
 ecolint-ai scan --min-severity medium            # only medium + high
+ecolint-ai scan --summary                        # high-level summary only
+ecolint-ai scan --max-findings 20                # show more detailed findings
+ecolint-ai scan --max-findings 0                 # show every detailed finding
 ecolint-ai init                                   # create a sample config
+ecolint-ai --version                              # print the package version
 ```
 
 | Flag | Description |
@@ -135,6 +186,13 @@ ecolint-ai init                                   # create a sample config
 | `--output <file>` | Write the report to a file (Markdown by default, JSON if `--json`) |
 | `--min-severity <low\|medium\|high>` | Minimum severity to report (overrides config; default `low`) |
 | `--provider <name>` | Provider hint for model suggestions (overrides config) |
+| `--summary` | Show only the high-level summary (no detailed findings) |
+| `--max-findings <n>` | Cap detailed terminal findings (default `10`; `0` = show all) |
+
+By default the terminal report shows at most **10 detailed findings** so the
+output stays readable; a `...plus N more findings` line points you to
+`--markdown`, `--json`, or `--max-findings 0` for the rest. Markdown and JSON
+reports always include **every** finding.
 
 ---
 
@@ -177,6 +235,8 @@ Every finding is tagged with a **waste category** and comes with a fix recipe.
 | `frequent-cron` | Background compute drift | medium | Very frequent cron / `setInterval` |
 | `no-token-limit` | Unbounded generation | low | LLM calls with no output token cap |
 | `sequential-llm-calls` | Repeated inference | medium | Multiple LLM calls in one flow |
+| `agent-loop-without-budget` | Repeated inference | high | Agent/tool loops with no step, time, token, or cost budget |
+| `missing-rate-limit` | Repeated inference | medium | Public AI routes calling a model with no rate limit/quota |
 
 Waste categories:
 
@@ -193,6 +253,44 @@ type WasteCategory =
 
 Rules use simple, transparent regex/static heuristics — no AST parsing in v1 —
 so results are directional and may include false positives or misses.
+
+---
+
+## Common patterns EcoLint catches
+
+```ts
+// Token bloat: full conversation history sent every request
+await openai.chat.completions.create({ model: "gpt-4o", messages: fullConversationHistory });
+
+// Redundant embedding: embeddings regenerated in a loop with no persistence
+for (const doc of docs) {
+  await openai.embeddings.create({ input: doc.text });
+}
+
+// Model overkill: a large model for a simple classification task
+await openai.chat.completions.create({
+  model: "gpt-4o",
+  messages: [{ role: "user", content: `classify: ${text}` }],
+});
+
+// Multimodal cost: image generation inside a retry loop
+while (attempt < 5) {
+  await openai.images.generate({ model: "dall-e-3", prompt });
+}
+
+// Agent loop without a budget: no max steps, timeout, or token/cost cap
+while (true) {
+  const res = await openai.chat.completions.create({ model: "gpt-4o", messages });
+  const toolCalls = res.choices[0].message.tool_calls;
+  if (!toolCalls) break;
+}
+
+// Public AI route without a rate limit: abusable, uncontrolled model calls
+export async function POST(req: Request) {
+  const res = await openai.chat.completions.create({ model: "gpt-4o", messages });
+  return Response.json({ text: res.choices[0].message.content });
+}
+```
 
 ---
 
@@ -234,6 +332,24 @@ The compute / carbon / water / cost levels are **relative priority signals**,
 not measured quantities. EcoLint AI uses static heuristics to identify patterns
 that may increase unnecessary compute demand — it deliberately does not claim to
 measure exact emissions or water use, or to save a specific amount of either.
+
+---
+
+## Limitations
+
+- EcoLint AI is heuristic/static analysis, not a perfect AST analyzer.
+- It may produce false positives or miss dynamic patterns.
+- Impact scores are directional priority signals, not measured emissions, water
+  usage, or exact cost.
+- The goal is to catch obvious AI compute waste early, not to replace runtime
+  telemetry.
+- Model-tier suggestions are heuristic and should be validated against your
+  quality requirements.
+- The current rule set is optimized for common AI app patterns, not every
+  framework or provider.
+
+See [Managing false positives](#managing-false-positives) for how to tune it to
+your codebase.
 
 ---
 
@@ -367,6 +483,47 @@ Generate a starter file with:
 ```bash
 ecolint-ai init   # writes ecolint.config.json
 ```
+
+---
+
+## Managing false positives
+
+EcoLint is **heuristic** — it matches patterns in source text, not a full AST.
+That keeps it fast and dependency-light, but it means it can flag intentional
+patterns (a deliberately uncached call, a fixture in an examples folder, a route
+you rate-limit at the edge). EcoLint gives you three ways to quiet those.
+
+**Ignore rules or paths via config** (`ecolint.config.json`):
+
+```json
+{
+  "ignoredRules": ["no-token-limit"],
+  "ignoredPaths": ["test/", "examples/", "vendor/"],
+  "provider": "openai"
+}
+```
+
+- `ignoredRules` — rule IDs to skip everywhere (see the [rules table](#rules-and-waste-categories)).
+- `ignoredPaths` — path substrings to skip entirely.
+
+**Ignore inline with comments** (ESLint-style). With no rule ID listed, the
+directive applies to every rule:
+
+```ts
+// ecolint-disable-next-line no-llm-cache
+const res = await openai.chat.completions.create({ model: "gpt-4o" });
+
+// ecolint-disable no-token-limit
+await openai.chat.completions.create({ model: "gpt-4o" });
+await openai.chat.completions.create({ model: "gpt-4o" });
+// ecolint-enable no-token-limit
+```
+
+Supported directives: `ecolint-disable-next-line`, `ecolint-disable-line`, and
+`ecolint-disable` / `ecolint-enable` blocks.
+
+If a rule is consistently noisy for your codebase, prefer `ignoredRules` over
+scattering inline comments.
 
 ---
 

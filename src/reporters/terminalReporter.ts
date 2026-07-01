@@ -16,6 +16,15 @@ const SEVERITY_LABEL: Record<Severity, string> = {
 const TERMINAL_RECIPE_LIMIT = 3;
 /** How many findings of the same noisy rule to show per file in the terminal. */
 const NO_TOKEN_LIMIT_PER_FILE = 2;
+/** Default cap on detailed findings shown in the terminal. 0 means show all. */
+export const DEFAULT_MAX_FINDINGS = 10;
+
+export type TerminalReportOptions = {
+  /** Max detailed findings to show. Defaults to 10; 0 shows all. */
+  maxFindings?: number;
+  /** Show only the high-level summary (no detailed findings). */
+  summary?: boolean;
+};
 
 function colorSeverityTag(severity: Severity): string {
   const tag = `[${severity.toUpperCase()}]`;
@@ -82,9 +91,49 @@ function renderFinding(f: Finding, ctx: FileContext): string {
   return out.join("\n");
 }
 
+/**
+ * Build the ordered list of findings to render as detailed blocks, applying the
+ * per-file cap on the noisy `no-token-limit` rule. Also reports, per file, how
+ * many `no-token-limit` findings were left out so the caller can note them.
+ */
+function collectDisplayable(findings: Finding[]): {
+  displayable: Finding[];
+  noTokenExtraByFile: Map<string, number>;
+} {
+  const totalNoToken = new Map<string, number>();
+  for (const f of findings) {
+    if (f.ruleId === "no-token-limit") {
+      totalNoToken.set(f.filePath, (totalNoToken.get(f.filePath) ?? 0) + 1);
+    }
+  }
+
+  const shownNoToken = new Map<string, number>();
+  const displayable: Finding[] = [];
+  for (const f of findings) {
+    if (f.ruleId === "no-token-limit") {
+      const shown = shownNoToken.get(f.filePath) ?? 0;
+      if (shown >= NO_TOKEN_LIMIT_PER_FILE) continue;
+      shownNoToken.set(f.filePath, shown + 1);
+    }
+    displayable.push(f);
+  }
+
+  const noTokenExtraByFile = new Map<string, number>();
+  for (const [file, total] of totalNoToken) {
+    const extra = total - NO_TOKEN_LIMIT_PER_FILE;
+    if (extra > 0) noTokenExtraByFile.set(file, extra);
+  }
+  return { displayable, noTokenExtraByFile };
+}
+
 /** Render a full scan result as a colorized terminal report. */
-export function renderTerminalReport(result: ScanResult): string {
+export function renderTerminalReport(
+  result: ScanResult,
+  options: TerminalReportOptions = {},
+): string {
   const { summary, findings } = result;
+  const summaryOnly = options.summary === true;
+  const maxFindings = options.maxFindings ?? DEFAULT_MAX_FINDINGS;
   const out: string[] = [];
 
   out.push(pc.bold(pc.green("EcoLint AI")));
@@ -138,6 +187,14 @@ export function renderTerminalReport(result: ScanResult): string {
     });
   }
 
+  // In summary mode, stop before the detailed findings.
+  if (summaryOnly) {
+    out.push("");
+    out.push(pc.dim("─".repeat(40)));
+    out.push(pc.dim(`Note:\n${IMPACT_DISCLAIMER}`));
+    return out.join("\n");
+  }
+
   // Precompute per-file context for related-finding awareness.
   const fileTotals = new Map<string, number>();
   const ruleCounts = new Map<string, number>();
@@ -152,37 +209,24 @@ export function renderTerminalReport(result: ScanResult): string {
     fileCategoryLabels.set(f.filePath, labels);
   }
 
-  // Detailed findings, grouped by severity. Cap noisy no-token-limit output.
-  const shownNoTokenPerFile = new Map<string, number>();
-  const notedNoTokenFiles = new Set<string>();
+  // Determine what to show: cap noisy no-token-limit output per file, then apply
+  // the overall --max-findings cap on the number of detailed findings.
+  const { displayable, noTokenExtraByFile } = collectDisplayable(findings);
+  const cap = maxFindings > 0 ? maxFindings : displayable.length;
+  const shown = displayable.slice(0, cap);
+  const hiddenByCap = displayable.length - shown.length;
+  const shownNoTokenFiles = new Set<string>();
 
+  // Detailed findings, grouped by severity.
   for (const severity of SEVERITY_ORDER) {
-    const group = findings.filter((f) => f.severity === severity);
+    const group = shown.filter((f) => f.severity === severity);
     if (group.length === 0) continue;
     out.push("");
     out.push(pc.bold(SEVERITY_LABEL[severity]));
     out.push(pc.dim("────────────────"));
 
     for (const f of group) {
-      if (f.ruleId === "no-token-limit") {
-        const shown = shownNoTokenPerFile.get(f.filePath) ?? 0;
-        if (shown >= NO_TOKEN_LIMIT_PER_FILE) {
-          if (!notedNoTokenFiles.has(f.filePath)) {
-            const total = ruleCounts.get(`${f.filePath}::no-token-limit`) ?? 0;
-            const extra = total - NO_TOKEN_LIMIT_PER_FILE;
-            out.push("");
-            out.push(
-              pc.dim(
-                `  ...plus ${extra} more no-token-limit findings in this file.`,
-              ),
-            );
-            notedNoTokenFiles.add(f.filePath);
-          }
-          continue;
-        }
-        shownNoTokenPerFile.set(f.filePath, shown + 1);
-      }
-
+      if (f.ruleId === "no-token-limit") shownNoTokenFiles.add(f.filePath);
       const label = WASTE_CATEGORY_LABEL[f.wasteCategory];
       const ctx: FileContext = {
         total: fileTotals.get(f.filePath) ?? 1,
@@ -194,6 +238,28 @@ export function renderTerminalReport(result: ScanResult): string {
       out.push("");
       out.push(renderFinding(f, ctx));
     }
+  }
+
+  // Note per-file no-token-limit findings that were collapsed.
+  for (const file of shownNoTokenFiles) {
+    const extra = noTokenExtraByFile.get(file);
+    if (extra && extra > 0) {
+      out.push("");
+      out.push(
+        pc.dim(`  ...plus ${extra} more no-token-limit findings in this file.`),
+      );
+    }
+  }
+
+  // Note detailed findings hidden by the --max-findings cap.
+  if (hiddenByCap > 0) {
+    out.push("");
+    out.push(
+      pc.dim(
+        `...plus ${hiddenByCap} more findings. ` +
+          `Use --markdown, --json, or --max-findings 0 to see all.`,
+      ),
+    );
   }
 
   out.push("");

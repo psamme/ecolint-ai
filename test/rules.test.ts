@@ -8,6 +8,8 @@ import { imageGenerationLoopRule } from "../src/rules/imageGenerationLoop.js";
 import { frequentCronRule } from "../src/rules/frequentCron.js";
 import { noTokenLimitRule } from "../src/rules/noTokenLimit.js";
 import { sequentialLlmCallsRule } from "../src/rules/sequentialLlmCalls.js";
+import { agentLoopWithoutBudgetRule } from "../src/rules/agentLoopWithoutBudget.js";
+import { missingRateLimitRule } from "../src/rules/missingRateLimit.js";
 
 function file(content: string, p = "sample.ts"): SourceFile {
   return { path: p, content, lines: content.split(/\r?\n/) };
@@ -208,6 +210,87 @@ describe("sequential-llm-calls", () => {
   });
 });
 
+describe("agent-loop-without-budget", () => {
+  it("flags an open-ended agent loop with no budget", () => {
+    const src = `
+      export async function runAgent(goal: string) {
+        while (true) {
+          const r = await openai.chat.completions.create({ model: "gpt-4o" });
+          const toolCalls = r.choices[0].message.tool_calls;
+          if (!toolCalls) break;
+        }
+      }
+    `;
+    const f = agentLoopWithoutBudgetRule.scan(file(src));
+    expect(f.length).toBe(1);
+    expect(f[0]!.ruleId).toBe("agent-loop-without-budget");
+    expect(f[0]!.severity).toBe("high");
+    expect(f[0]!.impact.score).toBe(88);
+  });
+
+  it("does not flag when a budget term (maxSteps) is present", () => {
+    const src = `
+      export async function runAgent() {
+        let steps = 0;
+        const maxSteps = 5;
+        while (steps < maxSteps) {
+          const toolCalls = await agent.run();
+          steps++;
+        }
+      }
+    `;
+    expect(agentLoopWithoutBudgetRule.scan(file(src))).toHaveLength(0);
+  });
+
+  it("does not flag a plain loop with no agent/model context", () => {
+    const src = `for (let i = 0; i < 10; i++) { total += i; }`;
+    expect(agentLoopWithoutBudgetRule.scan(file(src))).toHaveLength(0);
+  });
+
+  it("reports at most one finding per file", () => {
+    const src = `
+      export async function runAgent() {
+        while (true) {
+          const toolCalls = await agent.run();
+          await executeAgent();
+        }
+      }
+    `;
+    expect(agentLoopWithoutBudgetRule.scan(file(src))).toHaveLength(1);
+  });
+});
+
+describe("missing-rate-limit", () => {
+  it("flags a public POST route calling a model with no rate limit", () => {
+    const src = `
+      export async function POST(req: Request) {
+        const r = await openai.chat.completions.create({ model: "gpt-4o" });
+        return Response.json({ text: r });
+      }
+    `;
+    const f = missingRateLimitRule.scan(file(src));
+    expect(f.length).toBe(1);
+    expect(f[0]!.ruleId).toBe("missing-rate-limit");
+    expect(f[0]!.impact.score).toBe(68);
+  });
+
+  it("does not flag when a rate limit check is present", () => {
+    const src = `
+      export async function POST(req) {
+        if (!rateLimit(user.id)) return Response.json({}, { status: 429 });
+        const r = await openai.chat.completions.create({ model: "gpt-4o" });
+        return Response.json({ text: r });
+      }
+    `;
+    expect(missingRateLimitRule.scan(file(src))).toHaveLength(0);
+  });
+
+  it("does not flag a non-route file that calls a model", () => {
+    const src = `const r = await openai.chat.completions.create({ model: "gpt-4o" });`;
+    expect(missingRateLimitRule.scan(file(src))).toHaveLength(0);
+  });
+});
+
 const ALL_RULES = [
   noLlmCacheRule,
   hugeContextRule,
@@ -217,6 +300,8 @@ const ALL_RULES = [
   frequentCronRule,
   noTokenLimitRule,
   sequentialLlmCallsRule,
+  agentLoopWithoutBudgetRule,
+  missingRateLimitRule,
 ];
 
 describe("rule wiring", () => {
@@ -259,6 +344,14 @@ describe("rule wiring", () => {
         sequentialLlmCallsRule,
         `await openai.chat.completions.create({});\nawait openai.chat.completions.create({});`,
       ],
+      [
+        agentLoopWithoutBudgetRule,
+        `export async function runAgent() { while (true) { const toolCalls = await agent.run(); } }`,
+      ],
+      [
+        missingRateLimitRule,
+        `export async function POST(req) { const r = await openai.chat.completions.create({}); return Response.json({}); }`,
+      ],
     ];
 
     for (const [rule, src] of samples) {
@@ -282,5 +375,7 @@ describe("rule wiring", () => {
     expect(frequentCronRule.wasteCategory).toBe("background-compute-drift");
     expect(noTokenLimitRule.wasteCategory).toBe("unbounded-generation");
     expect(sequentialLlmCallsRule.wasteCategory).toBe("repeated-inference");
+    expect(agentLoopWithoutBudgetRule.wasteCategory).toBe("repeated-inference");
+    expect(missingRateLimitRule.wasteCategory).toBe("repeated-inference");
   });
 });

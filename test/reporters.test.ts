@@ -152,6 +152,59 @@ describe("reporters", () => {
     });
   });
 
+  describe("--max-findings and --summary", () => {
+    function ruleLineCount(text: string): number {
+      return text
+        .split("\n")
+        .filter((l) => l.trim().startsWith("Rule: ")).length;
+    }
+
+    it("default terminal caps detailed findings at 10", async () => {
+      const result = await scan({ path: EXAMPLE_PATH });
+      expect(result.summary.totalFindings).toBeGreaterThan(10);
+      const text = terminalText(result);
+      expect(ruleLineCount(text)).toBe(10);
+      expect(text).toContain("more findings. Use --markdown, --json, or --max-findings 0");
+    });
+
+    it("--max-findings 0 shows all detailed findings", async () => {
+      const result = await scan({ path: EXAMPLE_PATH });
+      const text = renderTerminalReport(result, { maxFindings: 0 }).replace(ANSI, "");
+      expect(ruleLineCount(text)).toBe(result.summary.totalFindings);
+      expect(text).not.toContain("more findings. Use --markdown");
+    });
+
+    it("--max-findings 3 caps detailed findings at 3", async () => {
+      const result = await scan({ path: EXAMPLE_PATH });
+      const text = renderTerminalReport(result, { maxFindings: 3 }).replace(ANSI, "");
+      expect(ruleLineCount(text)).toBe(3);
+    });
+
+    it("--summary shows the high-level report but no detailed findings", async () => {
+      const result = await scan({ path: EXAMPLE_PATH });
+      const text = renderTerminalReport(result, { summary: true }).replace(ANSI, "");
+      expect(text).toContain("Estimated avoidable compute waste score");
+      expect(text).toContain("Findings by waste category");
+      expect(text).toContain("Top fix opportunities");
+      expect(text).toContain("Suggested first pass");
+      expect(text).toContain("does not measure exact emissions");
+      expect(ruleLineCount(text)).toBe(0);
+      expect(text).not.toContain("Fix recipe:");
+    });
+
+    it("markdown and JSON stay fully detailed regardless of the terminal cap", async () => {
+      const result = await scan({ path: EXAMPLE_PATH });
+      const md = renderMarkdownReport(result);
+      const detailBlocks = md.split("\n").filter((l) => l.startsWith("### ")).length;
+      expect(detailBlocks).toBe(result.summary.totalFindings);
+
+      const parsed = JSON.parse(renderJsonReport(result)) as {
+        findings: unknown[];
+      };
+      expect(parsed.findings.length).toBe(result.summary.totalFindings);
+    });
+  });
+
   describe("terminal noise control", () => {
     it("caps fix recipes at 3 bullets and defers the rest to markdown/JSON", async () => {
       const result = await scan({ path: EXAMPLE_PATH });
