@@ -8,3 +8,5 @@ coverage/
 ecolint-report.md
 ecolint-report.json
 *.tsbuildinfo
+*.tgz
+*.tgz
