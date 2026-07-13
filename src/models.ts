@@ -2,7 +2,7 @@
  * A lightweight, CONFIGURABLE heuristic map of provider model tiers.
  *
  * These lists are intentionally illustrative, not authoritative — providers
- * release and rename models constantly. EcoLint AI uses this only to make
+ * release and rename models constantly. Trimference uses this only to make
  * suggestions more concrete ("consider gpt-4o-mini"), never to make hard claims.
  */
 export type Provider = "openai" | "anthropic" | "google" | "mistral" | "unknown";

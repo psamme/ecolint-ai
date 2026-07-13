@@ -1,7 +1,7 @@
 import type { Finding, ImpactEstimate, Level, Severity } from "./types.js";
 
 /**
- * EcoLint AI produces DIRECTIONAL impact estimates, not measured emissions.
+ * Trimference produces DIRECTIONAL impact estimates, not measured emissions.
  * These helpers keep impact wording and math in one place.
  */
 
@@ -62,7 +62,10 @@ export function makeImpact(estimate: ImpactEstimate): ImpactEstimate {
   return { ...estimate, score: clampScore(estimate.score) };
 }
 
-/** Human-readable one-line impact summary, e.g. "compute high · carbon medium · water medium · cost high". */
+/**
+ * @deprecated Carbon and water levels are not measurements and are omitted
+ * from current reports. Use operationalImpactLine instead.
+ */
 export function impactLine(impact: ImpactEstimate): string {
   return [
     `compute ${impact.computeWaste}`,
@@ -72,10 +75,19 @@ export function impactLine(impact: ImpactEstimate): string {
   ].join(" · ");
 }
 
+/** Human-facing operational signal; deliberately excludes carbon/water claims. */
+export function operationalImpactLine(impact: ImpactEstimate): string {
+  return [
+    `compute risk ${impact.computeWaste}`,
+    `cost risk ${impact.costImpact}`,
+    `confidence ${impact.confidence}`,
+  ].join(" · ");
+}
+
 export function levelWeight(level: Level): number {
   return LEVEL_WEIGHT[level];
 }
 
 export const IMPACT_DISCLAIMER =
-  "EcoLint AI uses static heuristics and directional impact estimates. " +
-  "It does not measure exact emissions, water usage, or infrastructure-level energy consumption.";
+  "Trimference uses static heuristics. Findings are review prompts, not measured " +
+  "usage, cost, emissions, water consumption, or infrastructure energy.";

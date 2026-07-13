@@ -1,29 +1,14 @@
-# EcoLint AI — Demo
+# Trimference demo
 
-**EcoLint AI is ESLint for wasteful AI compute.**
+Trimference is a local static review for LLM application efficiency safeguards.
+It reports probable cost, latency, and reliability risks with source evidence
+and explicit confidence. It does not measure runtime usage or environmental
+impact.
 
-It statically scans AI app codebases for patterns like uncached LLM calls, token
-bloat, repeated embeddings, model overkill, missing token limits, and unbudgeted
-agent loops — before they turn into API bills, latency, or unnecessary compute.
-
-> EcoLint AI uses static heuristics and directional impact estimates. It does
-> not measure exact emissions, water usage, or infrastructure-level energy
-> consumption.
-
----
-
-## 1. Quickest try (npx)
+## 20-second demo
 
 ```bash
-npx ecolint-ai scan --path .
-```
-
-No install, no API keys, no network calls — it just reads your source.
-
-## 2. 20-second copy/paste demo
-
-```bash
-mkdir ecolint-demo && cd ecolint-demo
+mkdir trimference-demo && cd trimference-demo
 cat > bad.ts <<'EOF'
 import OpenAI from "openai";
 
@@ -37,77 +22,65 @@ export async function classify(text: string) {
 }
 EOF
 
-npx ecolint-ai scan --path .
+npx trimference scan --path .
 ```
 
-You'll see an uncached LLM call, a top-tier model used for classification, and a
-missing output token limit — each with a fix recipe.
+The review should identify a likely repeatable uncached call, a model
+right-sizing opportunity, and a missing output limit.
 
-## 3. Scan the intentionally wasteful example
+## Repository examples
 
-```bash
-npm run scan:example
-# equivalent to:
-node dist/cli.js scan --path examples/wasteful-ai-app
-```
-
-Expect a dozen-plus findings across the waste categories, an "Estimated
-avoidable compute waste score", a category breakdown, and top fix opportunities.
-
-## 4. Scan the cleaner example
+From a source checkout:
 
 ```bash
-node dist/cli.js scan --path examples/cleaner-ai-app
-```
+npm ci
+npm run build
 
-Same features written with caching, bounded context, right-sized models, token
-limits, embedding reuse, and a rate limit — it should scan **clean**.
-
-## 5. Summary mode (high-level only)
-
-```bash
 node dist/cli.js scan --path examples/wasteful-ai-app --summary
+node dist/cli.js scan --path examples/cleaner-ai-app
+node dist/cli.js scan --path src --summary
 ```
 
-Shows files scanned, total findings, the waste score, category breakdown, top
-fix opportunities, and a suggested first pass — without the detailed findings.
+The wasteful example exercises all review areas. The cleaner example should be
+clean. The scanner source should also be clean: comments, quoted examples, and
+regex rule definitions are not executable call sites.
 
-## 6. Markdown report
+## Markdown review
 
 ```bash
-node dist/cli.js scan --path examples/wasteful-ai-app --markdown --output ecolint-report.md
+node dist/cli.js scan \
+  --path examples/wasteful-ai-app \
+  --markdown \
+  --output trimference-report.md
 ```
 
-Markdown and JSON reports always include **every** finding (the terminal caps
-detailed findings at 10 by default — use `--max-findings 0` to see them all).
+The report front-loads severity counts, safeguard areas, and top actions. Each
+finding has a clickable location and evidence row; verbose fix recipes are
+collapsed.
 
-## 7. Demo loop with Claude Code / Codex
+## Adopt with a baseline
 
-EcoLint pairs naturally with AI-assisted coding tools:
+Record current debt once:
 
-```txt
-1. Build an AI feature.
-2. Run EcoLint (`npx ecolint-ai scan --path .`).
-3. Paste the EcoLint findings into Claude Code / Codex.
-4. Ask it to fix the high-impact findings without changing behavior.
-5. Re-run EcoLint to confirm fewer findings and a lower score.
+```bash
+node dist/cli.js scan \
+  --path . \
+  --write-baseline trimference-baseline.json
 ```
 
-Because each finding ships with a **fix recipe**, findings are easy to hand to
-an agent verbatim. A good prompt:
+Then report or gate only on new findings:
 
-> "Here is the EcoLint AI report. Fix the high-impact findings — add caching,
-> bound the context, right-size the model, set token limits, and budget the
-> agent loop — without changing the feature's behavior. Then I'll re-run EcoLint."
+```bash
+node dist/cli.js scan \
+  --path . \
+  --baseline trimference-baseline.json \
+  --fail-on high
+```
 
-## 8. GitHub Action + PR comments
-
-EcoLint can run in pull requests and **post or update a single PR comment** with
-the Markdown report. This is useful for code review because the report appears
-right next to the code being reviewed.
+## GitHub pull requests
 
 ```yaml
-name: EcoLint AI
+name: Trimference
 
 on:
   pull_request:
@@ -117,31 +90,17 @@ permissions:
   pull-requests: write
 
 jobs:
-  ecolint:
+  trimference:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: psamme/ecolint-ai@v0.2.1
+      - uses: psamme/trimference@v0.3.0
         with:
           path: "."
+          baseline: "trimference-baseline.json"
+          fail-on: "high"
           comment: "true"
 ```
 
-- It **updates the same comment on re-runs** — no duplicate comments.
-- It uses a hidden marker (`<!-- ecolint-ai-report -->`) to find its own comment.
-- If it is **not running on a PR**, the report still appears in the **job
-  summary**.
-- **Very long reports are truncated** in the PR comment; the full report remains
-  in the job summary/artifact.
-
-It uses the built-in `GITHUB_TOKEN` (no custom token required). See
-[README → GitHub Action](README.md#github-action).
-
-## 9. Known limitations
-
-- Heuristic/static analysis, not a perfect AST analyzer.
-- Impact numbers are **directional estimates**, not measured values.
-- May produce false positives or miss dynamic patterns (see
-  [README → Managing false positives](README.md#managing-false-positives)).
-- Not runtime telemetry, and not a measure of exact emissions or water usage —
-  it complements runtime trackers like CodeCarbon and EcoLogits.
+The Action writes the report before enforcing the threshold, and it updates one
+stable PR comment instead of posting duplicates.

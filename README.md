@@ -1,550 +1,107 @@
-# EcoLint AI
+# Trimference
 
-**ESLint for wasteful AI compute.**
+**A local efficiency review for LLM application code.**
 
-![npm](https://img.shields.io/npm/v/ecolint-ai)
-![status: beta](https://img.shields.io/badge/status-beta-blue)
-![type: static analysis](https://img.shields.io/badge/type-static%20analysis-blue)
-![node: >=18](https://img.shields.io/badge/node-%3E%3D18-339933?logo=node.js&logoColor=white)
-![language: TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white)
-![tests: vitest](https://img.shields.io/badge/tests-vitest-6E9F18?logo=vitest&logoColor=white)
-![license: MIT](https://img.shields.io/badge/license-MIT-black)
+[![npm](https://img.shields.io/npm/v/trimference)](https://www.npmjs.com/package/trimference)
+[![CI](https://github.com/psamme/trimference/actions/workflows/trimference.yml/badge.svg)](https://github.com/psamme/trimference/actions/workflows/trimference.yml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-black)](LICENSE)
 
-EcoLint AI is a **static analysis tool for AI app efficiency**. It catches
-patterns like uncached LLM calls, token bloat, repeated embeddings, model
-overkill, and missing token limits before they become API bills, latency, or
-unnecessary compute demand.
+Trimference scans source code for patterns that can amplify LLM cost, latency,
+and reliability risk: uncached repeatable calls, unbounded context and output,
+repeated embeddings, model right-sizing opportunities, unbudgeted agent loops,
+and public AI routes without rate limits.
 
-It runs entirely on your source code:
+It is an early static heuristic scanner—not production telemetry or carbon
+accounting. Findings are review prompts with explicit confidence, source
+evidence, and fix recipes.
 
-- **Static analysis** — regex/heuristic scanning of your codebase.
-- **No API keys** and **no network calls** — nothing leaves your machine.
-- **No exact emissions or water measurement** — only directional estimates.
-- Helps you **find avoidable AI compute waste before shipping**.
+> **Renamed in 0.3.0:** Trimference was previously published as `ecolint-ai`.
+> The former config filename, suppression prefix, and public type names remain
+> available as migration aliases.
 
-The primary win is practical: **cost, latency, reliability, and code review**.
-Environmental impact is a secondary, directional signal — see
-[Limitations](#limitations).
-
-> **EcoLint AI uses static heuristics and directional impact estimates. It does
-> not measure exact emissions, water usage, or infrastructure-level energy
-> consumption.**
-
-> **Trying it right now?** Jump to the [20-second demo](#20-second-demo) or see
-> [DEMO.md](DEMO.md) for a longer walkthrough.
-
----
-
-## Quick start
-
-No install and no repo clone required — run EcoLint AI in any AI app repo with
-`npx`:
+## Try it
 
 ```bash
-npx ecolint-ai scan --path .
+npx trimference scan --path .
 ```
 
-For a shorter, high-level report:
+No provider key is required. The scanner does not upload source code or call an
+AI provider. `npx` may download the package from npm on first use.
+
+Useful variants:
 
 ```bash
-npx ecolint-ai scan --path . --summary
+npx trimference scan --path . --summary
+npx trimference scan --path . --markdown --output trimference-report.md
+npx trimference scan --path . --json
+npx trimference scan --path . --sarif --output trimference.sarif
+npx trimference scan --path . --fail-on high
 ```
 
-For a Markdown report you can save or share:
+## What the review looks like
 
-```bash
-npx ecolint-ai scan --path . --markdown --output ecolint-report.md
+```text
+Trimference efficiency review
+
+Scanned 6 files in 41ms.
+Found 17 review item(s): 4 high · 9 medium · 4 low
+
+Safeguards to review:
+- Repeated inference: 8
+- Unbounded generation: 4
+- Frequent background work: 1
+
+Top opportunities:
+1. Cap repeated image generation in lib/image.ts
+2. Add step, time, and token/cost budgets to agent loops.
+
+[HIGH · MEDIUM CONFIDENCE] Agent loop without obvious budget
+lib/agent.ts:8 · agent-loop-without-budget · Repeated inference
+  while (true) {
+Issue: This agentic flow appears to run without an obvious budget.
+Fix: Add explicit max steps, timeouts, token caps, and/or cost budgets.
 ```
 
-No API keys, no network calls — EcoLint only reads your source.
+Terminal output is compact by default. Markdown reports include a summary table,
+clickable locations, evidence, and collapsed fix details. JSON is available for
+automation, and SARIF 2.1.0 is available for code-scanning integrations. Reports
+describe operational compute and cost risk; they do not manufacture carbon or
+water estimates from source code.
 
----
+## Why static analysis?
 
-## Features
-
-- **Runs locally with `npx`, no API keys required** — nothing leaves your machine.
-- **Posts or updates a GitHub PR comment when used in CI** — a lightweight
-  code-review check for wasteful AI patterns.
-- **Flags AI-specific waste patterns** like uncached LLM calls, token bloat,
-  repeated embeddings, model overkill, missing token limits, and agent loops
-  without budgets.
-- **Provides waste categories, directional impact estimates, and fix recipes**
-  for each finding.
-- **Summary, terminal, Markdown, and JSON output** for humans and pipelines.
-- **Config-based ignores** for rules and paths, plus inline disable comments.
-
----
-
-## 20-second demo
-
-```bash
-mkdir ecolint-demo && cd ecolint-demo
-cat > bad.ts <<'EOF'
-import OpenAI from "openai";
-
-const openai = new OpenAI();
-
-export async function classify(text: string) {
-  return openai.chat.completions.create({
-    model: "gpt-4o",
-    messages: [{ role: "user", content: `classify this: ${text}` }]
-  });
-}
-EOF
-
-npx ecolint-ai scan --path .
-```
-
-You'll get a prioritized report: an uncached LLM call, a top-tier model on a
-classification task, and a missing output token limit — each with a fix recipe.
-
----
-
-## Example output
-
-The high-level summary from scanning the intentionally wasteful example app
-(`--summary` skips the detailed findings):
-
-```bash
-npx ecolint-ai scan --path examples/wasteful-ai-app --summary
-```
-
-![EcoLint AI summary output](assets/ecolint-demo.png)
-
-*Example summary output from the intentionally wasteful sample app.*
-
-Drop `--summary` for the full report: each finding with its file, waste category,
-directional impact, and a fix recipe.
-
----
-
-## Use in pull requests
-
-EcoLint AI can run in GitHub Actions and **post or update a PR comment** with the
-report. This makes it usable as a lightweight code-review check for wasteful AI
-patterns — the report shows up right next to the code being reviewed.
-
-```yaml
-name: EcoLint AI
-
-on:
-  pull_request:
-
-permissions:
-  contents: read
-  pull-requests: write
-
-jobs:
-  ecolint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: psamme/ecolint-ai@v0.2.1
-        with:
-          path: "."
-          min-severity: "low"
-          comment: "true"
-```
-
-- `comment: "true"` enables PR comments.
-- The action **updates its existing EcoLint comment instead of posting
-  duplicates**.
-- PR comments require the `pull-requests: write` permission (it uses GitHub's
-  built-in `GITHUB_TOKEN` — no custom token needed).
-- On non-`pull_request` events, EcoLint falls back to writing the **job summary**.
-
-Full details are in the [GitHub Action](#github-action) section below.
-
----
-
-## What it does
-
-EcoLint AI answers one question a developer has right before shipping an AI
-feature:
-
-> "Before I ship this AI feature, am I doing anything obviously wasteful?"
-
-And it responds with a prioritized code-review report:
-
-- files and line numbers for each issue
-- waste categories like repeated inference, token bloat, and model overkill
-- directional compute / carbon / water / cost impact estimates
-- top fix opportunities
-- concrete fix recipes for each finding
-
----
-
-## Why it exists
-
-Shipping AI features is easy; shipping them *efficiently* is not. Uncached
-calls, full-history prompts, and top-tier models used for trivial tasks are easy
-to introduce and hard to notice in review. They quietly turn into higher API bills, slower responses, and unnecessary compute demand.
-
-EcoLint AI is a **prevention layer for AI code review**. It prioritizes wasteful
-AI code patterns and estimates their potential impact directionally, so you can
-fix the expensive ones first.
-
----
-
-## How this differs from runtime trackers
-
-EcoLint AI does not measure actual emissions or API usage. Runtime tools like
-CodeCarbon, EcoLogits, browser-based AI impact trackers, and other carbon
-calculators are better for measuring usage *after* it happens.
-
-EcoLint AI works **earlier in the workflow**. It scans source code for AI app
-patterns that often lead to unnecessary compute, cost, and latency **before the
-code ships**. Think of it as a **prevention layer** that runs alongside your
-tests and linters — it **complements** runtime trackers, it is **not a
-replacement** for them.
-
-Use both: EcoLint to catch avoidable patterns in review, and a runtime tracker
-to measure what actually ran in production.
-
-### Comparison
-
-| Tool type | Examples | When it works | EcoLint AI difference |
-|---|---|---|---|
-| Runtime emissions tracking | CodeCarbon, EcoLogits | During execution/API calls | EcoLint scans code before runtime |
-| Browser AI usage tracking | AI Wattch-style tools | During chatbot usage | EcoLint targets developers building AI apps |
-| Cost dashboards | Cloud/provider billing tools | After usage accumulates | EcoLint flags waste patterns before shipping |
-| General linters | ESLint, Biome | During development | EcoLint focuses specifically on AI compute-waste patterns |
-
-EcoLint is complementary to these tools, not a superior replacement for any of
+Provider dashboards and runtime observability explain what already ran. Trimference
+works earlier: during local development and review, before a risky call pattern
+is merged. Use it alongside runtime cost and quality telemetry, not instead of
 them.
 
----
+## Rules
 
-## What EcoLint AI does not do
-
-- Does **not** measure exact emissions.
-- Does **not** claim exact water usage.
-- Does **not** call AI providers or any network service.
-- Does **not** require API keys.
-- Does **not** automatically rewrite your code (it gives fix recipes).
-- Does **not** replace runtime impact trackers.
-
----
-
-## Installation
-
-EcoLint AI is published on npm. The fastest way to try it — no install:
-
-```bash
-npx ecolint-ai scan --path .
-```
-
-Or install it globally / add it to a project:
-
-```bash
-npm i -g ecolint-ai          # global CLI: `ecolint-ai scan --path .`
-npm i -D ecolint-ai          # dev dependency in a project
-```
-
-No API keys, no network calls — it only reads your source.
-
-> Building from source instead? See [Development](#development).
-
----
-
-## CLI usage
-
-```bash
-ecolint-ai scan                                  # scan the current directory
-ecolint-ai scan --path .                         # scan a specific path
-ecolint-ai scan --path ./examples/wasteful-ai-app
-ecolint-ai scan --json                           # JSON to stdout
-ecolint-ai scan --markdown                       # Markdown to stdout
-ecolint-ai scan --output ecolint-report.md       # write a report file
-ecolint-ai scan --min-severity medium            # only medium + high
-ecolint-ai scan --summary                        # high-level summary only
-ecolint-ai scan --max-findings 20                # show more detailed findings
-ecolint-ai scan --max-findings 0                 # show every detailed finding
-ecolint-ai init                                   # create a sample config
-ecolint-ai --version                              # print the package version
-```
-
-| Flag | Description |
-|---|---|
-| `--path <path>` | Path to scan (default `.`) |
-| `--json` | Emit findings as JSON to stdout |
-| `--markdown` | Emit a Markdown report to stdout |
-| `--output <file>` | Write the report to a file (Markdown by default, JSON if `--json`) |
-| `--min-severity <low\|medium\|high>` | Minimum severity to report (overrides config; default `low`) |
-| `--provider <name>` | Provider hint for model suggestions (overrides config) |
-| `--summary` | Show only the high-level summary (no detailed findings) |
-| `--max-findings <n>` | Cap detailed terminal findings (default `10`; `0` = show all) |
-
-By default the terminal report shows at most **10 detailed findings** so the
-output stays readable; a `...plus N more findings` line points you to
-`--markdown`, `--json`, or `--max-findings 0` for the rest. Markdown and JSON
-reports always include **every** finding.
-
----
-
-## Report Formats
-
-Terminal (default), Markdown (`--markdown`), and JSON (`--json`) reporters are
-all supported. The JSON shape:
-
-```json
-{
-  "summary": {
-    "filesScanned": 5,
-    "totalFindings": 12,
-    "high": 5,
-    "medium": 5,
-    "low": 2,
-    "averageImpactScore": 70,
-    "overallImpactScore": 70,
-    "findingsByCategory": { "repeated-inference": 4, "token-bloat": 1 },
-    "topCategory": "repeated-inference"
-  },
-  "disclaimer": "EcoLint AI uses static heuristics and directional impact estimates...",
-  "findings": []
-}
-```
-
----
-
-## Rules and waste categories
-
-Every finding is tagged with a **waste category** and comes with a fix recipe.
-
-| Rule | Waste category | Severity | What it flags |
+| Rule | Review area | Default severity | What it looks for |
 |---|---|---|---|
-| `no-llm-cache` | Repeated inference | high | LLM calls with no nearby caching |
-| `huge-context` | Token bloat | medium | Full history / documents sent as context |
-| `expensive-model-simple-task` | Model overkill | medium | Top-tier model near a simple task |
-| `repeated-embeddings` | Redundant embedding | high | Embeddings in loops without persistence |
-| `image-generation-loop` | Multimodal cost explosion | high | Image generation in loops/retries |
-| `frequent-cron` | Background compute drift | medium | Very frequent cron / `setInterval` |
-| `no-token-limit` | Unbounded generation | low | LLM calls with no output token cap |
-| `sequential-llm-calls` | Repeated inference | medium | Multiple LLM calls in one flow |
-| `agent-loop-without-budget` | Repeated inference | high | Agent/tool loops with no step, time, token, or cost budget |
-| `missing-rate-limit` | Repeated inference | medium | Public AI routes calling a model with no rate limit/quota |
+| `no-llm-cache` | Repeated inference | medium; high for likely repeatable tasks | Model calls without nearby cache/dedupe logic |
+| `huge-context` | Token bloat | medium | Unbounded history/document variables close to a proven model call |
+| `expensive-model-simple-task` | Model right-sizing | medium | Larger model names near classification/extraction/routing work |
+| `repeated-embeddings` | Redundant embedding | high | Embedding calls without persistence, especially in loops |
+| `image-generation-loop` | Repeated image generation | high | Image generation close to loops or retries |
+| `frequent-cron` | Frequent background work | medium | Frequent schedules in files that perform AI work |
+| `no-token-limit` | Unbounded generation | low | Model calls without a nearby output cap |
+| `sequential-llm-calls` | Repeated inference | medium | Multiple nearby model calls that may be one flow |
+| `agent-loop-without-budget` | Repeated inference | high | Agent/tool loops without nearby step, time, token, or cost limits |
+| `missing-rate-limit` | Repeated inference | medium | Public AI routes without an obvious quota or rate limit |
 
-Waste categories:
+Rules first prove that relevant calls occur in executable code; comments,
+quoted examples, regex literals, and documentation are not treated as call
+sites. The scanner still uses lexical heuristics rather than full data-flow
+analysis, so review findings before acting on them.
 
-```ts
-type WasteCategory =
-  | "repeated-inference"
-  | "token-bloat"
-  | "model-overkill"
-  | "redundant-embedding"
-  | "unbounded-generation"
-  | "background-compute-drift"
-  | "multimodal-cost-explosion";
-```
+## CI and pull requests
 
-Rules use simple, transparent regex/static heuristics — no AST parsing in v1 —
-so results are directional and may include false positives or misses.
-
----
-
-## Common patterns EcoLint catches
-
-```ts
-// Token bloat: full conversation history sent every request
-await openai.chat.completions.create({ model: "gpt-4o", messages: fullConversationHistory });
-
-// Redundant embedding: embeddings regenerated in a loop with no persistence
-for (const doc of docs) {
-  await openai.embeddings.create({ input: doc.text });
-}
-
-// Model overkill: a large model for a simple classification task
-await openai.chat.completions.create({
-  model: "gpt-4o",
-  messages: [{ role: "user", content: `classify: ${text}` }],
-});
-
-// Multimodal cost: image generation inside a retry loop
-while (attempt < 5) {
-  await openai.images.generate({ model: "dall-e-3", prompt });
-}
-
-// Agent loop without a budget: no max steps, timeout, or token/cost cap
-while (true) {
-  const res = await openai.chat.completions.create({ model: "gpt-4o", messages });
-  const toolCalls = res.choices[0].message.tool_calls;
-  if (!toolCalls) break;
-}
-
-// Public AI route without a rate limit: abusable, uncontrolled model calls
-export async function POST(req: Request) {
-  const res = await openai.chat.completions.create({ model: "gpt-4o", messages });
-  return Response.json({ text: res.choices[0].message.content });
-}
-```
-
----
-
-## AI Waste Impact Tracker
-
-Every report includes an **AI Waste Impact Tracker** with:
-
-1. Total files scanned
-2. Total findings
-3. High / medium / low counts
-4. Estimated avoidable compute waste score
-5. Findings by waste category
-6. Top waste category
-7. Top 3 fix opportunities
-8. The static-heuristics disclaimer
-
-Each finding carries an impact estimate:
-
-```ts
-type ImpactEstimate = {
-  computeWaste: "low" | "medium" | "high";
-  carbonImpact: "low" | "medium" | "high";
-  waterImpact: "low" | "medium" | "high";
-  costImpact: "low" | "medium" | "high";
-  confidence: "low" | "medium" | "high";
-  score: number; // 1..100
-  explanation: string;
-};
-```
-
-These are **directional priority signals** to help you decide what to fix first
-— not measured footprints.
-
----
-
-## Honesty and disclaimer
-
-The compute / carbon / water / cost levels are **relative priority signals**,
-not measured quantities. EcoLint AI uses static heuristics to identify patterns
-that may increase unnecessary compute demand — it deliberately does not claim to
-measure exact emissions or water use, or to save a specific amount of either.
-
----
-
-## Limitations
-
-- EcoLint AI is heuristic/static analysis, not a perfect AST analyzer.
-- It may produce false positives or miss dynamic patterns.
-- Impact scores are directional priority signals, not measured emissions, water
-  usage, or exact cost.
-- The goal is to catch obvious AI compute waste early, not to replace runtime
-  telemetry.
-- Model-tier suggestions are heuristic and should be validated against your
-  quality requirements.
-- The current rule set is optimized for common AI app patterns, not every
-  framework or provider.
-
-See [Managing false positives](#managing-false-positives) for how to tune it to
-your codebase.
-
----
-
-## `ecoLLM` helper
-
-EcoLint AI also ships a tiny, **offline** advisor. It makes no network calls and
-holds no API keys — it just maps a task shape to a directional recommendation.
-
-```ts
-import { ecoLLM } from "ecolint-ai";
-
-const recommendation = ecoLLM({
-  provider: "openai",
-  taskType: "classification",
-  inputSize: "small",
-  ecoMode: true,
-});
-
-// {
-//   recommendedModelTier: "small",
-//   shouldCache: true,
-//   maxTokenRecommendation: 256,
-//   suggestedModels: ["gpt-4o-mini", "gpt-4.1-mini"],
-//   notes: [ ... ]
-// }
-```
-
-```ts
-type EcoLLMInput = {
-  taskType: "classification" | "extraction" | "generation" | "reasoning" | "embedding";
-  inputSize: "small" | "medium" | "large";
-  latencySensitive?: boolean;
-  ecoMode?: boolean;
-  provider?: "openai" | "anthropic" | "google" | "mistral" | "unknown";
-};
-
-type EcoLLMRecommendation = {
-  recommendedModelTier: "small" | "medium" | "large";
-  shouldCache: boolean;
-  maxTokenRecommendation: number;
-  notes: string[];
-  suggestedModels?: string[]; // present when a provider is given
-};
-```
-
-- Classification / extraction usually recommend a small or medium tier.
-- Reasoning with large input recommends the large tier.
-- Embedding always recommends caching / persistence.
-- `ecoMode: true` prefers smaller tiers and enables caching.
-- Passing `provider` adds concrete `suggestedModels` for the recommended tier.
-
-The provider model tiers are a **configurable heuristic** (see
-[`src/models.ts`](src/models.ts)); the specific model names are illustrative
-examples, not authoritative — verify quality for your use case.
-
----
-
-## GitHub Action
-
-The [`action.yml`](action.yml) composite action can be consumed directly from
-any repo. It runs `npx ecolint-ai scan ...` under the hood and works in two modes:
-
-1. **Job summary mode** (default) — writes the Markdown report to the workflow
-   **job summary**.
-2. **PR comment mode** (`comment: "true"`) — additionally posts or updates a
-   comment on the pull request.
-
-### Inputs
-
-| Input | Default | Meaning |
-|---|---|---|
-| `path` | `.` | Path to scan |
-| `min-severity` | `low` | Minimum severity to report (`low` \| `medium` \| `high`) |
-| `format` | `markdown` | Display format in the workflow log (`markdown` \| `json`) |
-| `comment` | `false` | When `true`, post/update a PR comment on `pull_request` events |
-
-### Job summary mode
-
-The simplest setup — scan on every push and read the report from the job summary:
+The GitHub Action writes the Markdown review to the job summary and can update a
+single PR comment:
 
 ```yaml
-name: EcoLint AI
-
-on:
-  push:
-
-permissions:
-  contents: read
-
-jobs:
-  ecolint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Run EcoLint AI
-        uses: psamme/ecolint-ai@v0.2.1
-        with:
-          path: "."
-          min-severity: "medium"
-```
-
-### PR comment mode
-
-Set `comment: "true"` to have EcoLint post its Markdown report as a pull-request
-comment. Grant `pull-requests: write` so the built-in `GITHUB_TOKEN` can comment
-— no custom token is required.
-
-```yaml
-name: EcoLint AI
+name: Trimference
 
 on:
   pull_request:
@@ -554,185 +111,158 @@ permissions:
   pull-requests: write
 
 jobs:
-  ecolint:
+  trimference:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Run EcoLint AI
-        uses: psamme/ecolint-ai@v0.2.1
+      - uses: psamme/trimference@v0.3.0
         with:
           path: "."
-          min-severity: "low"
-          format: "markdown"
           comment: "true"
+          fail-on: "high"
 ```
 
-Notes:
+The action tag runs the matching pinned npm version. Reporting happens before
+the optional threshold gate, so a failed check still leaves an actionable
+summary.
 
-- **PR comments require `pull-requests: write` permission.** Without it the
-  comment step fails to post.
-- **The action updates its existing comment instead of posting duplicates.** It
-  finds its own comment via a stable marker (`<!-- ecolint-ai-report -->`) and
-  edits it in place on each run.
-- **On non-`pull_request` events** (e.g. `push`) EcoLint does not fail — it skips
-  the comment and writes the report to the **job summary** instead.
-- **If a report is too long for a PR comment**, EcoLint posts the front-loaded
-  summary and top findings and notes that the full report is in the job summary.
+### Adopt without failing on existing debt
 
-> Prefer not to depend on the published action? The included workflow at
-> [`.github/workflows/ecolint-local.yml`](.github/workflows/ecolint-local.yml)
-> runs EcoLint from the repo's own source and writes the report into the Actions
-> **job summary**.
+Create a baseline once:
 
----
+```bash
+npx trimference scan --path . --write-baseline trimference-baseline.json
+```
 
-## Configuration
+Then report or fail only on findings not in that baseline:
 
-Configuration is optional — the CLI works with zero config. If an
-`ecolint.config.json` file exists in the scanned path (or the current
-directory), EcoLint loads it. **CLI flags always override config values.**
+```bash
+npx trimference scan --path . \
+  --baseline trimference-baseline.json \
+  --fail-on high
+```
+
+In the Action:
+
+```yaml
+with:
+  path: "."
+  baseline: "trimference-baseline.json"
+  fail-on: "high"
+  comment: "true"
+```
+
+Baseline fingerprints use rule, relative path, and normalized source evidence,
+so unrelated line-number changes do not normally resurrect accepted findings.
+
+For a local diff-only review, make sure the base ref exists in the checkout:
+
+```bash
+npx trimference scan --path . --changed-since origin/main --fail-on high
+```
+
+## CLI
+
+```text
+trimference scan [options]
+
+--path <path>              Path to scan (default: .)
+--summary                  Summary only
+--max-findings <n>         Terminal detail limit; 0 shows all
+--markdown                 Markdown to stdout
+--json                     JSON to stdout
+--sarif                    SARIF 2.1.0 to stdout
+--output <file>            Write Markdown, JSON with --json, or SARIF with --sarif
+--min-severity <level>     low | medium | high
+--provider <name>          openai | anthropic | google | mistral
+--baseline <file>          Hide accepted baseline findings
+--write-baseline <file>    Record current findings and exit
+--changed-since <git-ref>  Scan only files changed since a local Git ref
+--fail-on <level>          none | low | medium | high; exits 2 on a match
+```
+
+Exit codes:
+
+- `0`: scan completed and the configured gate passed
+- `1`: invalid input, configuration, or scan failure
+- `2`: findings met the `--fail-on` threshold
+
+## Configuration and suppressions
+
+Run `trimference init` to create `trimference.config.json`:
 
 ```json
 {
   "minSeverity": "low",
   "ignoredRules": [],
-  "ignoredPaths": [],
-  "provider": "openai"
+  "ignoredPaths": ["examples/**", "**/*.fixture.ts"],
+  "provider": "openai",
+  "baseline": "trimference-baseline.json",
+  "failOn": "none"
 }
 ```
 
-| Key | Meaning |
-|---|---|
-| `minSeverity` | Minimum severity to report (`low` \| `medium` \| `high`) |
-| `ignoredRules` | Rule IDs to skip (e.g. `["no-token-limit"]`) |
-| `ignoredPaths` | Path substrings to skip (e.g. `["examples/", "vendor/"]`) |
-| `provider` | Provider hint for model suggestions |
+CLI flags override config. `ignoredPaths` accepts glob patterns; entries without
+`*` or `?` continue to work as path substrings.
 
-Generate a starter file with:
-
-```bash
-ecolint-ai init   # writes ecolint.config.json
-```
-
----
-
-## Managing false positives
-
-EcoLint is **heuristic** — it matches patterns in source text, not a full AST.
-That keeps it fast and dependency-light, but it means it can flag intentional
-patterns (a deliberately uncached call, a fixture in an examples folder, a route
-you rate-limit at the edge). EcoLint gives you three ways to quiet those.
-
-**Ignore rules or paths via config** (`ecolint.config.json`):
-
-```json
-{
-  "ignoredRules": ["no-token-limit"],
-  "ignoredPaths": ["test/", "examples/", "vendor/"],
-  "provider": "openai"
-}
-```
-
-- `ignoredRules` — rule IDs to skip everywhere (see the [rules table](#rules-and-waste-categories)).
-- `ignoredPaths` — path substrings to skip entirely.
-
-**Ignore inline with comments** (ESLint-style). With no rule ID listed, the
-directive applies to every rule:
+Inline suppressions are also supported:
 
 ```ts
-// ecolint-disable-next-line no-llm-cache
-const res = await openai.chat.completions.create({ model: "gpt-4o" });
+// trimference-disable-next-line no-llm-cache -- personalized response, no safe reuse
+await openai.responses.create({ model, input });
 
-// ecolint-disable no-token-limit
-await openai.chat.completions.create({ model: "gpt-4o" });
-await openai.chat.completions.create({ model: "gpt-4o" });
-// ecolint-enable no-token-limit
+// trimference-disable no-token-limit
+await runProviderManagedGeneration();
+// trimference-enable no-token-limit
 ```
 
-Supported directives: `ecolint-disable-next-line`, `ecolint-disable-line`, and
-`ecolint-disable` / `ecolint-enable` blocks.
+Supported directives are `trimference-disable-next-line`, `trimference-disable-line`,
+and `trimference-disable` / `trimference-enable` blocks.
 
-If a rule is consistently noisy for your codebase, prefer `ignoredRules` over
-scattering inline comments.
+## Library API
 
----
+```ts
+import {
+  scan,
+  renderMarkdownReport,
+  findingFingerprint,
+} from "trimference";
 
-## Examples
-
-Two example apps are included:
-
-- [`examples/wasteful-ai-app`](examples/wasteful-ai-app) — intentionally wasteful
-  code that trips most rules across every waste category.
-- [`examples/cleaner-ai-app`](examples/cleaner-ai-app) — the same features with
-  caching, bounded context, right-sized models, token limits, and embedding
-  reuse. It should scan clean (or nearly clean).
-
-```bash
-npm run scan:example
-node dist/cli.js scan --path examples/cleaner-ai-app
+const result = await scan({ path: ".", minSeverity: "medium" });
+console.log(renderMarkdownReport(result));
+console.log(result.findings.map(findingFingerprint));
 ```
 
----
+The `trimInference` helper provides the existing local model-tier advisor;
+`ecoLLM` remains as a deprecated compatibility alias. Its model names are
+illustrative and manually maintained. Validate model choices with your own
+quality evaluations and current provider pricing.
+
+## Limitations
+
+- Lexical/static heuristics cannot prove runtime behavior or request volume.
+- Nearby calls may be independent; nearby safeguards may apply to a different call.
+- Framework and provider coverage is strongest for common JavaScript/TypeScript SDKs.
+- Python files are discoverable, but Python-specific framework coverage is still early.
+- Model right-sizing must be validated against application-specific quality tests.
+- Trimference does not measure exact spend, emissions, water, or infrastructure energy.
+
+False-positive reports and small representative fixtures are especially useful.
+See [BENCHMARK.md](BENCHMARK.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Development
 
 ```bash
-npm install        # install dependencies
-npm run build      # compile TypeScript to dist/
-npm test           # run the vitest suite
-npm run dev -- scan --path examples/wasteful-ai-app   # run without building
-npm run scan:example                                  # scan the wasteful example
+npm ci
+npm run build
+npm test
+npm run scan:example
+npm run verify
 ```
 
-Project layout:
-
-```txt
-src/
-  cli.ts            # commander CLI (scan, init)
-  index.ts          # public API
-  scanner.ts        # file discovery + rule runner + summary
-  types.ts          # Finding, ImpactEstimate, WasteCategory, ...
-  impact.ts         # impact helpers + disclaimer text
-  ecoLLM.ts         # offline model-tier advisor
-  config.ts         # extensions, ignores, defaults
-  rules/            # one file per rule + shared helpers
-  reporters/        # terminal, json, markdown, impact tracker
-examples/           # wasteful + cleaner sample apps
-test/               # vitest tests
-action.yml          # GitHub Action
-```
-
----
-
-## Project Summary
-
-**Project-card (one sentence):**
-
-> EcoLint AI is a TypeScript CLI and GitHub Action — "ESLint for wasteful AI
-> compute" — that statically scans AI app codebases for avoidable compute-waste
-> patterns and reports waste categories, directional impact estimates, and fix
-> recipes.
-
----
-
-## Roadmap
-
-- SARIF output for code-scanning integration
-- Changed-files-only scans in CI
-- AST-based detection (fewer false positives than regex)
-- Framework-specific rules for the Vercel AI SDK, LangChain, and LlamaIndex
-- VS Code extension
-- Carbon-aware scheduling integration
-- Cloud bill import for prioritization
-- Configurable rules and thresholds
-- Provider-specific model maps
-- Water-stress-aware region recommendations
-
-EcoLint AI stays a static prevention layer — it will not add runtime telemetry,
-real emissions math, or exact water/carbon accounting.
-
----
+The repository includes an intentionally wasteful example and a cleaner
+counterpart under `examples/`.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+[MIT](LICENSE)

@@ -1,6 +1,6 @@
-name: "EcoLint AI"
-description: "ESLint for wasteful AI compute. Scan a codebase for avoidable AI compute waste."
-author: "EcoLint AI contributors"
+name: "Trimference"
+description: "Review LLM application code for missing efficiency safeguards."
+author: "Trimference contributors"
 branding:
   icon: "wind"
   color: "green"
@@ -19,44 +19,68 @@ inputs:
     required: false
     default: "markdown"
   comment:
-    description: "Post or update an EcoLint AI comment on pull requests"
+    description: "Post or update a Trimference comment on pull requests"
     required: false
     default: "false"
+  baseline:
+    description: "Optional Trimference baseline path, relative to the scanned path"
+    required: false
+    default: ""
+  fail-on:
+    description: "Fail after reporting at this severity (none | low | medium | high)"
+    required: false
+    default: "none"
+  changed-since:
+    description: "Optional local Git ref; scan only files changed since it"
+    required: false
+    default: ""
 
 runs:
   using: "composite"
   steps:
-    - name: Run EcoLint AI
-      id: ecolint
+    - name: Run Trimference
+      id: trimference
       shell: bash
       env:
         INPUT_PATH: ${{ inputs.path }}
         INPUT_MIN_SEVERITY: ${{ inputs.min-severity }}
         INPUT_FORMAT: ${{ inputs.format }}
+        INPUT_BASELINE: ${{ inputs.baseline }}
+        INPUT_CHANGED_SINCE: ${{ inputs.changed-since }}
       run: |
-        REPORT="${RUNNER_TEMP:-.}/ecolint-report.md"
+        REPORT="${RUNNER_TEMP:-.}/trimference-report.md"
 
         # Always generate a Markdown report file for the job summary and any PR
         # comment. Markdown reports include every finding.
-        npx --yes ecolint-ai scan \
+        EXTRA_ARGS=()
+        if [ -n "$INPUT_BASELINE" ]; then
+          EXTRA_ARGS+=(--baseline "$INPUT_BASELINE")
+        fi
+        if [ -n "$INPUT_CHANGED_SINCE" ]; then
+          EXTRA_ARGS+=(--changed-since "$INPUT_CHANGED_SINCE")
+        fi
+
+        npx --yes trimference@0.3.0 scan \
           --path "$INPUT_PATH" \
           --min-severity "$INPUT_MIN_SEVERITY" \
           --markdown \
-          --output "$REPORT"
+          --output "$REPORT" \
+          "${EXTRA_ARGS[@]}"
 
         # The CLI skips writing the file when there are no scannable files;
         # fall back to a minimal report so the summary and comment steps work.
         if [ ! -f "$REPORT" ]; then
-          printf '# EcoLint AI Report\n\nNo scannable files were found under `%s`.\n' \
+          printf '# Trimference Report\n\nNo scannable files were found under `%s`.\n' \
             "$INPUT_PATH" > "$REPORT"
         fi
 
         # Print the report to the workflow log in the requested display format.
         if [ "$INPUT_FORMAT" = "json" ]; then
-          npx --yes ecolint-ai scan \
+          npx --yes trimference@0.3.0 scan \
             --path "$INPUT_PATH" \
             --min-severity "$INPUT_MIN_SEVERITY" \
-            --json || true
+            --json \
+            "${EXTRA_ARGS[@]}" || true
         else
           cat "$REPORT"
         fi
@@ -72,13 +96,14 @@ runs:
       if: ${{ inputs.comment == 'true' && github.event_name == 'pull_request' }}
       uses: actions/github-script@v7
       env:
-        REPORT_PATH: ${{ steps.ecolint.outputs.report-path }}
+        REPORT_PATH: ${{ steps.trimference.outputs.report-path }}
       with:
         github-token: ${{ github.token }}
         script: |
           // Mirrors src/prComment.ts (buildCommentBody). Keep the two in sync.
           const fs = require("fs");
-          const MARKER = "<!-- ecolint-ai-report -->";
+          const MARKER = "<!-- trimference-report -->";
+          const LEGACY_MARKER = "<!-- ecolint-ai-report -->";
           const MAX_LENGTH = 60000;
 
           const report = fs.readFileSync(process.env.REPORT_PATH, "utf8").trimEnd();
@@ -92,7 +117,7 @@ runs:
             const truncated = (lastNewline > 0 ? slice.slice(0, lastNewline) : slice).trimEnd();
             const note =
               "> ⚠️ This report was truncated to fit a PR comment. " +
-              "See the full EcoLint AI report in the workflow **job summary**.";
+              "See the full Trimference report in the workflow **job summary**.";
             body = `${MARKER}\n${truncated}\n\n---\n\n${note}\n`;
           }
 
@@ -105,7 +130,9 @@ runs:
             issue_number,
             per_page: 100,
           });
-          const existing = comments.find((c) => c.body && c.body.includes(MARKER));
+          const existing = comments.find(
+            (c) => c.body && (c.body.includes(MARKER) || c.body.includes(LEGACY_MARKER)),
+          );
 
           if (existing) {
             await github.rest.issues.updateComment({
@@ -127,5 +154,29 @@ runs:
       if: ${{ inputs.comment == 'true' && github.event_name != 'pull_request' }}
       shell: bash
       run: |
-        echo "EcoLint AI: PR comments are only available on pull_request events." \
+        echo "Trimference: PR comments are only available on pull_request events." \
           "The report was written to the job summary instead."
+
+    - name: Enforce Trimference threshold
+      if: ${{ inputs.fail-on != 'none' }}
+      shell: bash
+      env:
+        INPUT_PATH: ${{ inputs.path }}
+        INPUT_MIN_SEVERITY: ${{ inputs.min-severity }}
+        INPUT_BASELINE: ${{ inputs.baseline }}
+        INPUT_FAIL_ON: ${{ inputs.fail-on }}
+        INPUT_CHANGED_SINCE: ${{ inputs.changed-since }}
+      run: |
+        EXTRA_ARGS=()
+        if [ -n "$INPUT_BASELINE" ]; then
+          EXTRA_ARGS+=(--baseline "$INPUT_BASELINE")
+        fi
+        if [ -n "$INPUT_CHANGED_SINCE" ]; then
+          EXTRA_ARGS+=(--changed-since "$INPUT_CHANGED_SINCE")
+        fi
+        npx --yes trimference@0.3.0 scan \
+          --path "$INPUT_PATH" \
+          --min-severity "$INPUT_MIN_SEVERITY" \
+          --summary \
+          --fail-on "$INPUT_FAIL_ON" \
+          "${EXTRA_ARGS[@]}"

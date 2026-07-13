@@ -1,7 +1,7 @@
 # cleaner-ai-app (example)
 
 This example shows the same kinds of features as `wasteful-ai-app`, but written
-with EcoLint AI's recommendations applied.
+with Trimference's recommendations applied.
 
 Scan it:
 
@@ -18,5 +18,5 @@ node dist/cli.js scan --path examples/cleaner-ai-app
 - **Embedding reuse:** `embedIfMissing` checks a `vectorStore` before embedding.
 
 You should see **far fewer findings** here than in `wasteful-ai-app`. Because
-EcoLint AI is heuristic, a small number of low-severity findings may still
+Trimference is heuristic, a small number of low-severity findings may still
 appear — that is expected and reflects the tool being directional, not exact.

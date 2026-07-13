@@ -22,6 +22,10 @@ export type ScannerOptions = {
   ignoredRules?: string[];
   ignoredPaths?: string[];
   provider?: Provider;
+  /** Stable finding fingerprints to suppress as accepted baseline debt. */
+  baselineKeys?: Iterable<string>;
+  /** Optional exact relative paths to scan, used by changed-files mode. */
+  includedPaths?: Iterable<string>;
 };
 
 /** High-impact rules whose findings should be softened inside test files. */
@@ -82,21 +86,23 @@ export function runRules(
   file: SourceFile,
   context?: RuleContext,
   ignoredRules?: Set<string>,
+  onRuleError?: (ruleId: string, error: unknown) => void,
 ): Finding[] {
   const findings: Finding[] = [];
   for (const rule of rules) {
     if (ignoredRules?.has(rule.id)) continue;
     try {
       findings.push(...rule.scan(file, context));
-    } catch {
-      // A misbehaving rule should never crash the whole scan.
+    } catch (error) {
+      // Keep scanning, but make the failure observable to callers/reporters.
+      onRuleError?.(rule.id, error);
     }
   }
   // Soften high-impact findings inside test/spec files to keep reports credible.
   const controlled = isTestFile(file.path)
     ? findings.map(softenIfHighImpactTest)
     : findings;
-  // Honor inline `// ecolint-disable...` directives before deduping.
+  // Honor inline `// trimference-disable...` directives before deduping.
   return dedupeFindings(applyInlineDisables(file, controlled));
 }
 
@@ -133,6 +139,9 @@ function meetsMinSeverity(severity: Severity, min: Severity): boolean {
 function buildSummary(
   filesScanned: number,
   findings: Finding[],
+  baselineSuppressed = 0,
+  ruleErrors: ScanSummary["ruleErrors"] = [],
+  durationMs = 0,
 ): ScanSummary {
   const high = findings.filter((f) => f.severity === "high").length;
   const medium = findings.filter((f) => f.severity === "medium").length;
@@ -157,14 +166,22 @@ function buildSummary(
 
   const topCategory = pickTopCategory(findingsByCategory);
 
+  const priorityPoints = high * 3 + medium * 2 + low;
+
   return {
     filesScanned,
+    durationMs,
     totalFindings: findings.length,
     high,
     medium,
     low,
     averageImpactScore,
-    overallImpactScore: averageImpactScore,
+    // Compatibility field. Unlike the old average, this cannot increase when
+    // a finding is fixed. Human-facing reports use counts and confidence.
+    overallImpactScore: Math.min(100, priorityPoints * 4),
+    priorityPoints,
+    baselineSuppressed,
+    ruleErrors,
     topFindings: findings.slice(0, 3),
     findingsByRule,
     findingsByFile,
@@ -192,39 +209,78 @@ function pickTopCategory(
 
 /** Scan a path and return sorted findings plus a summary. */
 export async function scan(options: ScannerOptions): Promise<ScanResult> {
+  const startedAt = Date.now();
   const rootPath = path.resolve(options.path);
   const minSeverity = options.minSeverity ?? "low";
   const ignoredRules = new Set(options.ignoredRules ?? []);
   const ignoredPaths = options.ignoredPaths ?? [];
   const context: RuleContext = { provider: options.provider };
+  const baselineKeys = new Set(options.baselineKeys ?? []);
+  const includedPaths = options.includedPaths
+    ? new Set([...options.includedPaths].map(normalizePath))
+    : undefined;
 
   const files = await discoverFiles(rootPath);
 
   let allFindings: Finding[] = [];
+  const ruleErrors: ScanSummary["ruleErrors"] = [];
   let scannedCount = 0;
   for (const absPath of files) {
     const file = await readSourceFile(absPath, rootPath);
+    if (includedPaths && !includedPaths.has(file.path)) continue;
     if (isIgnoredPath(file.path, ignoredPaths)) continue;
     scannedCount++;
-    allFindings.push(...runRules(file, context, ignoredRules));
+    allFindings.push(
+      ...runRules(file, context, ignoredRules, (ruleId, error) => {
+        ruleErrors.push({
+          ruleId,
+          filePath: file.path,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }),
+    );
   }
 
   allFindings = allFindings.filter((f) =>
     meetsMinSeverity(f.severity, minSeverity),
   );
+  const severityFilteredCount = allFindings.length;
+  allFindings = allFindings.filter((f) => !baselineKeys.has(findingFingerprint(f)));
   const sorted = sortFindings(allFindings);
 
   return {
-    summary: buildSummary(scannedCount, sorted),
+    summary: buildSummary(
+      scannedCount,
+      sorted,
+      severityFilteredCount - allFindings.length,
+      ruleErrors,
+      Date.now() - startedAt,
+    ),
     findings: sorted,
   };
 }
 
-/** Match a relative path against simple substring / glob-ish ignore entries. */
+/** Stable-enough key for accepting existing findings in a baseline file. */
+export function findingFingerprint(finding: Finding): string {
+  const evidence = (finding.snippet ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 160);
+  return [finding.ruleId, finding.filePath, evidence].join("::");
+}
+
+/** Match a relative path against glob patterns or backwards-compatible substrings. */
 function isIgnoredPath(relPath: string, ignoredPaths: string[]): boolean {
   if (ignoredPaths.length === 0) return false;
   return ignoredPaths.some((entry) => {
-    const needle = entry.replace(/\*+/g, "").replace(/^\.\//, "");
-    return needle.length > 0 && relPath.includes(needle);
+    const pattern = entry.replace(/^\.\//, "");
+    if (!/[?*]/.test(pattern)) return pattern.length > 0 && relPath.includes(pattern);
+    const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+    const regex = escaped
+      .replace(/\*\*/g, "\u0000")
+      .replace(/\*/g, "[^/]*")
+      .replace(/\?/g, "[^/]")
+      .replace(/\u0000/g, ".*");
+    return new RegExp(`^(?:${regex})$`).test(relPath);
   });
 }

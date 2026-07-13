@@ -5,6 +5,9 @@ coverage/
 .next/
 *.log
 .DS_Store
+trimference-report.md
+trimference-report.json
+# Pre-rename report names.
 ecolint-report.md
 ecolint-report.json
 *.tsbuildinfo

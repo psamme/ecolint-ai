@@ -1,5 +1,5 @@
 /**
- * Helpers for posting the EcoLint AI report as a pull-request comment.
+ * Helpers for posting the Trimference report as a pull-request comment.
  *
  * The GitHub Action embeds an inline copy of this logic inside an
  * `actions/github-script` step (it cannot import from the published package at
@@ -12,6 +12,8 @@
  * and update its own comment instead of posting duplicates. Do not change this
  * without a migration — existing comments are matched by this exact string.
  */
+export const TRIMFERENCE_COMMENT_MARKER = "<!-- trimference-report -->";
+/** @deprecated Used only to migrate comments created before the rename. */
 export const ECOLINT_COMMENT_MARKER = "<!-- ecolint-ai-report -->";
 
 /**
@@ -28,7 +30,7 @@ export type CommentBodyOptions = {
 /**
  * Build the PR comment body from a Markdown report.
  *
- * - Prepends {@link ECOLINT_COMMENT_MARKER} so the comment can be found/updated.
+ * - Prepends {@link TRIMFERENCE_COMMENT_MARKER} so the comment can be found/updated.
  * - Truncates on a line boundary if the report is too long for a PR comment,
  *   appending a note that points readers to the full report in the job summary.
  *   The Markdown report is front-loaded (summary, impact score, category
@@ -42,7 +44,7 @@ export function buildCommentBody(
   const trimmed = report.trimEnd();
 
   if (trimmed.length <= maxLength) {
-    return `${ECOLINT_COMMENT_MARKER}\n${trimmed}\n`;
+    return `${TRIMFERENCE_COMMENT_MARKER}\n${trimmed}\n`;
   }
 
   // Cut at the last newline before the limit so we never split a Markdown line.
@@ -52,7 +54,7 @@ export function buildCommentBody(
 
   const note =
     "> ⚠️ This report was truncated to fit a PR comment. " +
-    "See the full EcoLint AI report in the workflow **job summary**.";
+    "See the full Trimference report in the workflow **job summary**.";
 
-  return `${ECOLINT_COMMENT_MARKER}\n${body}\n\n---\n\n${note}\n`;
+  return `${TRIMFERENCE_COMMENT_MARKER}\n${body}\n\n---\n\n${note}\n`;
 }

@@ -3,7 +3,7 @@ import { makeImpact } from "../impact.js";
 import {
   LLM_CALL_PATTERNS,
   createFinding,
-  findMatches,
+  findCodeMatchesInFile,
 } from "./helpers.js";
 
 const WINDOW_LINES = 80;
@@ -17,7 +17,7 @@ const FIX_RECIPE = [
 
 export const sequentialLlmCallsRule: Rule = {
   id: "sequential-llm-calls",
-  title: "Multiple LLM calls in one flow",
+  title: "Nearby LLM calls may multiply work",
   severity: "medium",
   wasteCategory: "repeated-inference",
   description:
@@ -26,7 +26,7 @@ export const sequentialLlmCallsRule: Rule = {
     "Consider combining prompts, batching, parallelizing independent calls, or caching intermediate results.",
   fixRecipe: FIX_RECIPE,
   scan(file: SourceFile): Finding[] {
-    const calls = findMatches(file.content, LLM_CALL_PATTERNS);
+    const calls = findCodeMatchesInFile(file, LLM_CALL_PATTERNS);
     if (calls.length < 2) return [];
 
     // Report once per cluster of >= 2 calls within WINDOW_LINES, anchored on
@@ -64,7 +64,8 @@ function buildFinding(file: SourceFile, index: number): Finding {
     wasteCategory: sequentialLlmCallsRule.wasteCategory,
     file,
     index,
-    message: "Multiple LLM calls appear in the same execution flow.",
+    message:
+      "Multiple LLM calls appear close together. Verify whether they run in the same execution flow.",
     recommendation: sequentialLlmCallsRule.recommendation,
     fixRecipe: sequentialLlmCallsRule.fixRecipe,
     impact: makeImpact({

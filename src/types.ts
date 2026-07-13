@@ -14,16 +14,18 @@ export type WasteCategory =
 export const WASTE_CATEGORY_LABEL: Record<WasteCategory, string> = {
   "repeated-inference": "Repeated inference",
   "token-bloat": "Token bloat",
-  "model-overkill": "Model overkill",
+  "model-overkill": "Model right-sizing",
   "redundant-embedding": "Redundant embedding",
   "unbounded-generation": "Unbounded generation",
-  "background-compute-drift": "Background compute drift",
-  "multimodal-cost-explosion": "Multimodal cost explosion",
+  "background-compute-drift": "Frequent background work",
+  "multimodal-cost-explosion": "Repeated image generation",
 };
 
 export type ImpactEstimate = {
   computeWaste: Level;
+  /** @deprecated Experimental legacy field; not shown in human reports. */
   carbonImpact: Level;
+  /** @deprecated Experimental legacy field; not shown in human reports. */
   waterImpact: Level;
   costImpact: Level;
   confidence: Level;
@@ -72,13 +74,23 @@ export type Rule = {
 
 export type ScanSummary = {
   filesScanned: number;
+  durationMs: number;
   totalFindings: number;
   high: number;
   medium: number;
   low: number;
   averageImpactScore: number;
-  /** Overall "Estimated avoidable compute waste score" from 0 to 100. */
+  /**
+   * @deprecated Retained for API compatibility. This is a monotonic heuristic
+   * priority index, not measured impact, and is not shown in human reports.
+   */
   overallImpactScore: number;
+  /** Monotonic weighted finding total: high=3, medium=2, low=1. */
+  priorityPoints: number;
+  /** Findings hidden because they matched a supplied baseline. */
+  baselineSuppressed: number;
+  /** Rule failures encountered while scanning; empty during normal operation. */
+  ruleErrors: Array<{ ruleId: string; filePath: string; message: string }>;
   topFindings: Finding[];
   findingsByRule: Record<string, number>;
   findingsByFile: Record<string, number>;

@@ -2,7 +2,12 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { scan, discoverFiles, runRules } from "../src/scanner.js";
+import {
+  scan,
+  discoverFiles,
+  findingFingerprint,
+  runRules,
+} from "../src/scanner.js";
 import type { SourceFile } from "../src/types.js";
 
 function makeFile(p: string, content: string): SourceFile {
@@ -13,7 +18,7 @@ describe("scanner", () => {
   let dir: string;
 
   beforeAll(async () => {
-    dir = await fs.mkdtemp(path.join(os.tmpdir(), "ecolint-scan-"));
+    dir = await fs.mkdtemp(path.join(os.tmpdir(), "trimference-scan-"));
     await fs.mkdir(path.join(dir, "lib"), { recursive: true });
     await fs.writeFile(
       path.join(dir, "lib", "a.ts"),
@@ -85,6 +90,30 @@ describe("scanner", () => {
     const cleaner = await scan({ path: "examples/cleaner-ai-app" });
     expect(cleaner.summary.totalFindings).toBeLessThan(
       wasteful.summary.totalFindings,
+    );
+  });
+
+  it("does not flag its own rule definitions as executable AI calls", async () => {
+    const result = await scan({ path: "src" });
+    expect(result.findings).toHaveLength(0);
+  });
+
+  it("suppresses matching baseline fingerprints", async () => {
+    const initial = await scan({ path: dir });
+    const baseline = initial.findings.map(findingFingerprint);
+    const filtered = await scan({ path: dir, baselineKeys: baseline });
+    expect(filtered.findings).toHaveLength(0);
+    expect(filtered.summary.baselineSuppressed).toBe(initial.findings.length);
+  });
+
+  it("uses a monotonic compatibility score", async () => {
+    const full = await scan({ path: "examples/wasteful-ai-app" });
+    const withoutOne = await scan({
+      path: "examples/wasteful-ai-app",
+      baselineKeys: [findingFingerprint(full.findings.at(-1)!)],
+    });
+    expect(withoutOne.summary.overallImpactScore).toBeLessThanOrEqual(
+      full.summary.overallImpactScore,
     );
   });
 });

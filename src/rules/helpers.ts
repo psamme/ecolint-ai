@@ -41,6 +41,21 @@ export function findMatches(
   needles: Array<string | RegExp>,
 ): MatchLocation[] {
   const results: MatchLocation[] = [];
+  const lineStarts = [0];
+  for (let i = 0; i < content.length; i++) {
+    if (content[i] === "\n") lineStarts.push(i + 1);
+  }
+  const fastLocation = (index: number): { line: number; column: number } => {
+    let low = 0;
+    let high = lineStarts.length - 1;
+    while (low <= high) {
+      const mid = Math.floor((low + high) / 2);
+      if (lineStarts[mid]! <= index) low = mid + 1;
+      else high = mid - 1;
+    }
+    const start = lineStarts[Math.max(0, high)]!;
+    return { line: high + 1, column: index - start + 1 };
+  };
   for (const needle of needles) {
     const regex =
       typeof needle === "string"
@@ -49,7 +64,7 @@ export function findMatches(
     let match: RegExpExecArray | null;
     regex.lastIndex = 0;
     while ((match = regex.exec(content)) !== null) {
-      const { line, column } = lineNumberForIndex(content, match.index);
+      const { line, column } = fastLocation(match.index);
       results.push({
         index: match.index,
         line,
@@ -71,6 +86,150 @@ export function findMatches(
     prevEnd = m.index + m.matchText.length;
   }
   return collapsed;
+}
+
+/**
+ * Return a same-length view of source with comments, quoted strings, template
+ * literals, and regex literals replaced by spaces. Newlines are preserved, so
+ * indexes and line numbers still map back to the original source.
+ *
+ * This is intentionally a small lexer rather than a parser. Rules use it only
+ * to prove that a call/identifier occurs in executable code; they can still
+ * inspect the original source around that proven call for model names and
+ * prompt text.
+ */
+export function codeOnly(content: string): string {
+  const out = [...content];
+  type State = "code" | "line-comment" | "block-comment" | "single" | "double" | "template" | "regex";
+  let state: State = "code";
+  let escaped = false;
+  let inRegexClass = false;
+
+  const mask = (i: number): void => {
+    if (out[i] !== "\n" && out[i] !== "\r") out[i] = " ";
+  };
+  const previousSignificant = (i: number): string => {
+    for (let j = i - 1; j >= 0; j--) {
+      if (!/\s/.test(content[j]!)) return content[j]!;
+    }
+    return "";
+  };
+  const startsRegex = (i: number): boolean => {
+    const prev = previousSignificant(i);
+    return prev === "" || "=(:,![{;?".includes(prev);
+  };
+
+  for (let i = 0; i < content.length; i++) {
+    const c = content[i]!;
+    const next = content[i + 1] ?? "";
+
+    if (state === "code") {
+      if (c === "#" && (i === 0 || /\s/.test(content[i - 1]!))) {
+        mask(i);
+        state = "line-comment";
+      } else if (c === "/" && next === "/") {
+        mask(i);
+        mask(i + 1);
+        state = "line-comment";
+        i++;
+      } else if (c === "/" && next === "*") {
+        mask(i);
+        mask(i + 1);
+        state = "block-comment";
+        i++;
+      } else if (c === "'") {
+        mask(i);
+        state = "single";
+        escaped = false;
+      } else if (c === '"') {
+        mask(i);
+        state = "double";
+        escaped = false;
+      } else if (c === "`") {
+        mask(i);
+        state = "template";
+        escaped = false;
+      } else if (c === "/" && startsRegex(i)) {
+        mask(i);
+        state = "regex";
+        escaped = false;
+        inRegexClass = false;
+      }
+      continue;
+    }
+
+    mask(i);
+    if (state === "line-comment") {
+      if (c === "\n") state = "code";
+      continue;
+    }
+    if (state === "block-comment") {
+      if (c === "*" && next === "/") {
+        mask(i + 1);
+        state = "code";
+        i++;
+      }
+      continue;
+    }
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (c === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (state === "single" && c === "'") state = "code";
+    else if (state === "double" && c === '"') state = "code";
+    else if (state === "template" && c === "`") state = "code";
+    else if (state === "regex") {
+      if (c === "[") inRegexClass = true;
+      else if (c === "]") inRegexClass = false;
+      else if (c === "/" && !inRegexClass) {
+        while (/[a-z]/i.test(content[i + 1] ?? "")) {
+          i++;
+          mask(i);
+        }
+        state = "code";
+      }
+    }
+  }
+  return out.join("");
+}
+
+/** Find matches that occur in executable code, excluding comments/literals. */
+export function findCodeMatches(
+  content: string,
+  needles: Array<string | RegExp>,
+): MatchLocation[] {
+  return findMatches(codeOnly(content), needles).map((match) => ({
+    ...match,
+    matchText: content.slice(match.index, match.index + match.matchText.length),
+  }));
+}
+
+const CODE_ONLY_CACHE = new WeakMap<SourceFile, string>();
+
+function executableCode(file: SourceFile): string {
+  const cached = CODE_ONLY_CACHE.get(file);
+  if (cached !== undefined) return cached;
+  const masked = codeOnly(file.content);
+  CODE_ONLY_CACHE.set(file, masked);
+  return masked;
+}
+
+/** Cached executable-code matching for rule scans. */
+export function findCodeMatchesInFile(
+  file: SourceFile,
+  needles: Array<string | RegExp>,
+): MatchLocation[] {
+  return findMatches(executableCode(file), needles).map((match) => ({
+    ...match,
+    matchText: file.content.slice(
+      match.index,
+      match.index + match.matchText.length,
+    ),
+  }));
 }
 
 /**
@@ -100,6 +259,22 @@ export function hasNearby(
     if (typeof needle === "string") return nearby.includes(needle.toLowerCase());
     return ensureGlobal(needle).test(nearby);
   });
+}
+
+/** Like hasNearby, but ignores terms that occur only in comments/literals. */
+export function hasNearbyCode(
+  file: SourceFile,
+  index: number,
+  needles: Array<string | RegExp>,
+  windowLines = 20,
+): boolean {
+  const masked = executableCode(file);
+  const executable: SourceFile = {
+    ...file,
+    content: masked,
+    lines: masked.split(/\r?\n/),
+  };
+  return hasNearby(executable, index, needles, windowLines);
 }
 
 /** Grab a single trimmed line of source for use as a snippet. */
@@ -159,14 +334,14 @@ export function dedupeFindings(findings: Finding[]): Finding[] {
 
 /**
  * Inline ignore directives, ESLint-style. Supported in any comment:
- *   // ecolint-disable-next-line [ruleId ...]   -> suppress findings on the next line
- *   // ecolint-disable-line     [ruleId ...]    -> suppress findings on this line
- *   // ecolint-disable          [ruleId ...]    -> start suppression block
- *   // ecolint-enable           [ruleId ...]    -> end suppression block
+ *   // trimference-disable-next-line [ruleId ...]   -> suppress findings on the next line
+ *   // trimference-disable-line     [ruleId ...]    -> suppress findings on this line
+ *   // trimference-disable          [ruleId ...]    -> start suppression block
+ *   // trimference-enable           [ruleId ...]    -> end suppression block
  * With no rule ids listed, the directive applies to all rules.
  */
 const DIRECTIVE_RE =
-  /ecolint-(disable-next-line|disable-line|disable|enable)\b([^\n]*)/i;
+  /(?:trimference|ecolint)-(disable-next-line|disable-line|disable|enable)\b([^\n]*)/i;
 
 function parseRuleIds(args: string): string[] {
   return args.match(/[a-z][a-z0-9-]*/gi) ?? [];
@@ -239,7 +414,7 @@ function collectSuppressions(file: SourceFile): SuppressionMaps {
   return maps;
 }
 
-/** Remove findings suppressed by inline ecolint-disable directives. */
+/** Remove findings suppressed by inline Trimference directives. */
 export function applyInlineDisables(
   file: SourceFile,
   findings: Finding[],
@@ -264,6 +439,11 @@ export const LLM_CALL_PATTERNS: Array<string | RegExp> = [
   /\bstreamText\s*\(/i,
   /\bmessages\.create\s*\(/i,
   /\bresponses\.create\s*\(/i,
+  /\bchat\.complete\s*\(/i,
+  /\bgenerateContent\s*\(/i,
+  /\bmodels\.generate_content\s*\(/i,
+  /\binvoke_model\s*\(/i,
+  /\b(?:llm|chat_model)\.(?:invoke|ainvoke|stream|astream)\s*\(/i,
 ];
 
 function escapeRegExp(literal: string): string {

@@ -1,6 +1,12 @@
 import type { Finding, Rule, SourceFile } from "../types.js";
 import { makeImpact } from "../impact.js";
-import { createFinding, dedupeFindings, findMatches } from "./helpers.js";
+import {
+  LLM_CALL_PATTERNS,
+  createFinding,
+  dedupeFindings,
+  findCodeMatchesInFile,
+  findMatches,
+} from "./helpers.js";
 
 /**
  * Very frequent cron expressions and short setInterval delays.
@@ -31,6 +37,17 @@ export const frequentCronRule: Rule = {
   fixRecipe: FIX_RECIPE,
   scan(file: SourceFile): Finding[] {
     const findings: Finding[] = [];
+
+    // Scheduling alone is not an AI-efficiency issue. Require an executable
+    // model/embedding/image/agent call in the same file before evaluating its
+    // frequency.
+    const aiWork = findCodeMatchesInFile(file, [
+      ...LLM_CALL_PATTERNS,
+      /embeddings\.create\s*\(/i,
+      /images\.generate\s*\(/i,
+      /agent\.run\s*\(/i,
+    ]);
+    if (aiWork.length === 0) return findings;
 
     for (const match of findMatches(file.content, FREQUENT_PATTERNS)) {
       findings.push(

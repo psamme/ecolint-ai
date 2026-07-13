@@ -4,8 +4,8 @@ import {
   LLM_CALL_PATTERNS,
   createFinding,
   dedupeFindings,
-  findMatches,
-  hasNearby,
+  findCodeMatchesInFile,
+  hasNearbyCode,
 } from "./helpers.js";
 
 const TOKEN_LIMIT_TERMS: Array<string | RegExp> = [
@@ -35,14 +35,14 @@ export const noTokenLimitRule: Rule = {
   fixRecipe: FIX_RECIPE,
   scan(file: SourceFile): Finding[] {
     const findings: Finding[] = [];
-    const llmCalls = findMatches(file.content, LLM_CALL_PATTERNS);
+    const llmCalls = findCodeMatchesInFile(file, LLM_CALL_PATTERNS);
 
     // Only flag when the file clearly contains at least one LLM call.
     if (llmCalls.length === 0) return findings;
 
     for (const match of llmCalls) {
       // A token limit anywhere within ~25 lines counts as covered.
-      if (hasNearby(file, match.index, TOKEN_LIMIT_TERMS, 25)) continue;
+      if (hasNearbyCode(file, match.index, TOKEN_LIMIT_TERMS, 25)) continue;
 
       findings.push(
         createFinding({

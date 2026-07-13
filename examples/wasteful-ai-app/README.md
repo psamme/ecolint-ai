@@ -1,6 +1,6 @@
 # wasteful-ai-app (example)
 
-This is an **intentionally wasteful** AI app used to demonstrate EcoLint AI.
+This is an **intentionally wasteful** AI app used to demonstrate Trimference.
 None of this code is meant to be copied — it exists to trip the rules.
 
 Scan it:
@@ -11,7 +11,7 @@ npm run scan:example
 node dist/cli.js scan --path examples/wasteful-ai-app
 ```
 
-## What EcoLint AI should flag here
+## What Trimference should flag here
 
 | File | Pattern | Rule |
 |---|---|---|

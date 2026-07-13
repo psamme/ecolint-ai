@@ -3,8 +3,8 @@ import { makeImpact } from "../impact.js";
 import {
   createFinding,
   dedupeFindings,
-  findMatches,
-  hasNearby,
+  findCodeMatchesInFile,
+  hasNearbyCode,
 } from "./helpers.js";
 
 const EMBEDDING_PATTERNS: Array<string | RegExp> = [
@@ -60,9 +60,9 @@ export const repeatedEmbeddingsRule: Rule = {
   scan(file: SourceFile): Finding[] {
     const findings: Finding[] = [];
 
-    for (const match of findMatches(file.content, EMBEDDING_PATTERNS)) {
-      const inLoop = hasNearby(file, match.index, LOOP_TERMS, 20);
-      const persisted = hasNearby(file, match.index, PERSISTENCE_TERMS, 20);
+    for (const match of findCodeMatchesInFile(file, EMBEDDING_PATTERNS)) {
+      const inLoop = hasNearbyCode(file, match.index, LOOP_TERMS, 20);
+      const persisted = hasNearbyCode(file, match.index, PERSISTENCE_TERMS, 20);
 
       // If embeddings are persisted / reused nearby, there's no waste to flag.
       if (persisted) continue;

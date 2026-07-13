@@ -1,6 +1,10 @@
 import type { Finding, Rule, SourceFile } from "../types.js";
 import { makeImpact } from "../impact.js";
-import { createFinding, findMatches, hasNearby } from "./helpers.js";
+import {
+  createFinding,
+  findCodeMatchesInFile,
+  hasNearbyCode,
+} from "./helpers.js";
 
 /**
  * Strong signals that a file drives an agent / repeated tool-execution loop.
@@ -62,10 +66,10 @@ const FIX_RECIPE = [
 /** Find the first agent-loop signal in the file, or null if none. */
 function firstAgentLoopSignal(file: SourceFile): number | null {
   // (a) An explicit agent-execution term is enough on its own.
-  const executionMatches = findMatches(file.content, AGENT_EXECUTION_TERMS);
+  const executionMatches = findCodeMatchesInFile(file, AGENT_EXECUTION_TERMS);
   // (b) An infinite loop only counts when model/tool/agent code is nearby.
-  const loopMatches = findMatches(file.content, INFINITE_LOOP_TERMS).filter((m) =>
-    hasNearby(file, m.index, AGENT_CONTEXT_TERMS, 15),
+  const loopMatches = findCodeMatchesInFile(file, INFINITE_LOOP_TERMS).filter((m) =>
+    hasNearbyCode(file, m.index, AGENT_CONTEXT_TERMS, 15),
   );
 
   const candidates = [...executionMatches, ...loopMatches].sort(
@@ -88,8 +92,9 @@ export const agentLoopWithoutBudgetRule: Rule = {
     const signalIndex = firstAgentLoopSignal(file);
     if (signalIndex === null) return [];
 
-    // If any budget/limit term appears anywhere in the file, assume it's bounded.
-    if (findMatches(file.content, BUDGET_TERMS).length > 0) return [];
+    // Only a budget close to the loop/call counts; an unrelated timeout in the
+    // same file should not silence the finding.
+    if (hasNearbyCode(file, signalIndex, BUDGET_TERMS, 40)) return [];
 
     // Report once per file to avoid noise.
     return [

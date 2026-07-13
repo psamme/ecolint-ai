@@ -1,16 +1,16 @@
 {
-  "name": "ecolint-ai",
-  "version": "0.2.1",
-  "description": "ESLint for wasteful AI compute. Scan AI application codebases for avoidable compute waste.",
+  "name": "trimference",
+  "version": "0.3.0",
+  "description": "Local static analysis for LLM application efficiency safeguards.",
   "type": "module",
   "license": "MIT",
-  "homepage": "https://github.com/psamme/ecolint-ai#readme",
+  "homepage": "https://github.com/psamme/trimference#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/psamme/ecolint-ai.git"
+    "url": "git+https://github.com/psamme/trimference.git"
   },
   "bugs": {
-    "url": "https://github.com/psamme/ecolint-ai/issues"
+    "url": "https://github.com/psamme/trimference/issues"
   },
   "keywords": [
     "ai",
@@ -19,14 +19,15 @@
     "linter",
     "static-analysis",
     "developer-tools",
-    "sustainability",
-    "green-software",
+    "llmops",
+    "cost-optimization",
+    "sarif",
     "code-quality",
     "github-actions",
     "typescript"
   ],
   "bin": {
-    "ecolint-ai": "dist/cli.js"
+    "trimference": "dist/cli.js"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -35,6 +36,10 @@
     "action.yml",
     "README.md",
     "DEMO.md",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "BENCHMARK.md",
     "LICENSE"
   ],
   "exports": {
@@ -49,7 +54,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "scan:example": "tsx src/cli.ts scan --path examples/wasteful-ai-app",
-    "prepublishOnly": "npm run build"
+    "scan:self": "tsx src/cli.ts scan --path src --summary",
+    "verify": "npm run build && npm test && node dist/cli.js scan --path src --summary --fail-on low && node dist/cli.js scan --path examples/cleaner-ai-app --summary --fail-on low",
+    "prepublishOnly": "npm run verify"
   },
   "dependencies": {
     "commander": "^12.1.0",

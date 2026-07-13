@@ -1,21 +1,21 @@
 import { describe, it, expect } from "vitest";
 import {
-  ECOLINT_COMMENT_MARKER,
+  TRIMFERENCE_COMMENT_MARKER,
   MAX_COMMENT_LENGTH,
   buildCommentBody,
 } from "../src/prComment.js";
 
 describe("buildCommentBody", () => {
   it("prepends the stable marker so the comment can be found and updated", () => {
-    const body = buildCommentBody("# EcoLint AI Report\n\nAll clear.");
-    expect(body.startsWith(`${ECOLINT_COMMENT_MARKER}\n`)).toBe(true);
+    const body = buildCommentBody("# Trimference Report\n\nAll clear.");
+    expect(body.startsWith(`${TRIMFERENCE_COMMENT_MARKER}\n`)).toBe(true);
     expect(body).toContain("All clear.");
   });
 
   it("leaves short reports untouched (no truncation note)", () => {
     const body = buildCommentBody("short report");
     expect(body).not.toContain("truncated");
-    expect(body).toBe(`${ECOLINT_COMMENT_MARKER}\nshort report\n`);
+    expect(body).toBe(`${TRIMFERENCE_COMMENT_MARKER}\nshort report\n`);
   });
 
   it("truncates long reports and points to the job summary", () => {
@@ -34,7 +34,7 @@ describe("buildCommentBody", () => {
     const long = Array.from({ length: 5000 }, (_, i) => `line ${i}`).join("\n");
     const body = buildCommentBody(long, { maxLength: 100 });
     const reportPortion = body.slice(
-      `${ECOLINT_COMMENT_MARKER}\n`.length,
+      `${TRIMFERENCE_COMMENT_MARKER}\n`.length,
       body.indexOf("\n\n---"),
     );
     // Every retained line is a whole "line N" entry, not a partial fragment.

@@ -3,8 +3,8 @@ import { makeImpact } from "../impact.js";
 import {
   createFinding,
   dedupeFindings,
-  findMatches,
-  hasNearby,
+  findCodeMatchesInFile,
+  hasNearbyCode,
 } from "./helpers.js";
 
 const IMAGE_GEN_PATTERNS: Array<string | RegExp> = [
@@ -52,8 +52,8 @@ export const imageGenerationLoopRule: Rule = {
     // match several patterns on adjacent lines; only report it once.
     let lastReportedLine = -Infinity;
 
-    for (const match of findMatches(file.content, IMAGE_GEN_PATTERNS)) {
-      if (!hasNearby(file, match.index, LOOP_RETRY_TERMS, 20)) continue;
+    for (const match of findCodeMatchesInFile(file, IMAGE_GEN_PATTERNS)) {
+      if (!hasNearbyCode(file, match.index, LOOP_RETRY_TERMS, 20)) continue;
       if (match.line - lastReportedLine <= 2) continue;
       lastReportedLine = match.line;
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ecoLLM } from "../src/ecoLLM.js";
+import { ecoLLM, trimInference } from "../src/ecoLLM.js";
 
 describe("ecoLLM", () => {
   it("recommends a small tier for small classification tasks", () => {
@@ -28,13 +28,22 @@ describe("ecoLLM", () => {
     expect(rec.notes.some((n) => /persist|existing vector/i.test(n))).toBe(true);
   });
 
-  it("ecoMode prefers a smaller tier and enables caching", () => {
+  it("trimMode prefers a smaller tier and enables caching", () => {
     const normal = ecoLLM({ taskType: "generation", inputSize: "medium" });
-    const eco = ecoLLM({ taskType: "generation", inputSize: "medium", ecoMode: true });
-    expect(eco.shouldCache).toBe(true);
-    // generation defaults to "medium"; eco mode should downshift to "small".
-    expect(eco.recommendedModelTier).toBe("small");
+    const trimmed = trimInference({
+      taskType: "generation",
+      inputSize: "medium",
+      trimMode: true,
+    });
+    expect(trimmed.shouldCache).toBe(true);
+    // Generation defaults to medium; trim mode should downshift to small.
+    expect(trimmed.recommendedModelTier).toBe("small");
     expect(normal.recommendedModelTier).toBe("medium");
+  });
+
+  it("keeps ecoMode as a compatibility alias", () => {
+    const rec = ecoLLM({ taskType: "generation", inputSize: "medium", ecoMode: true });
+    expect(rec.recommendedModelTier).toBe("small");
   });
 
   it("returns a sensible max token recommendation", () => {

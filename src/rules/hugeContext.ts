@@ -1,6 +1,11 @@
 import type { Finding, Rule, SourceFile } from "../types.js";
 import { makeImpact } from "../impact.js";
-import { createFinding, dedupeFindings, findMatches } from "./helpers.js";
+import {
+  LLM_CALL_PATTERNS,
+  createFinding,
+  dedupeFindings,
+  findCodeMatchesInFile,
+} from "./helpers.js";
 
 /**
  * Variable names / patterns that suggest large or unbounded context is being
@@ -45,8 +50,13 @@ export const hugeContextRule: Rule = {
   fixRecipe: FIX_RECIPE,
   scan(file: SourceFile): Finding[] {
     const findings: Finding[] = [];
+    const calls = findCodeMatchesInFile(file, LLM_CALL_PATTERNS);
+    if (calls.length === 0) return findings;
 
-    for (const match of findMatches(file.content, CONTEXT_PATTERNS)) {
+    for (const match of findCodeMatchesInFile(file, CONTEXT_PATTERNS)) {
+      // Require the context signal to be close to a proven model call. This
+      // avoids flagging unrelated variables and rule/documentation fixtures.
+      if (!calls.some((call) => Math.abs(call.line - match.line) <= 30)) continue;
       findings.push(
         createFinding({
           ruleId: this.id,

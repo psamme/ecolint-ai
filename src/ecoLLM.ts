@@ -13,6 +13,8 @@ export type EcoLLMInput = {
   taskType: EcoLLMTaskType;
   inputSize: EcoLLMInputSize;
   latencySensitive?: boolean;
+  trimMode?: boolean;
+  /** @deprecated Use trimMode. */
   ecoMode?: boolean;
   provider?: Provider;
 };
@@ -26,6 +28,11 @@ export type EcoLLMRecommendation = {
   suggestedModels?: string[];
 };
 
+export type TrimInferenceTaskType = EcoLLMTaskType;
+export type TrimInferenceInputSize = EcoLLMInputSize;
+export type TrimInferenceInput = EcoLLMInput;
+export type TrimInferenceRecommendation = EcoLLMRecommendation;
+
 type Tier = "small" | "medium" | "large";
 
 const TIER_ORDER: Tier[] = ["small", "medium", "large"];
@@ -38,6 +45,7 @@ function downshift(tier: Tier): Tier {
 /**
  * A local, offline advisor. It makes NO network calls and holds no provider
  * secrets — it just maps a task shape to a directional recommendation.
+ * @deprecated Use trimInference.
  */
 export function ecoLLM(input: EcoLLMInput): EcoLLMRecommendation {
   const {
@@ -45,6 +53,7 @@ export function ecoLLM(input: EcoLLMInput): EcoLLMRecommendation {
     inputSize,
     latencySensitive = false,
     ecoMode = false,
+    trimMode = ecoMode,
     provider = "unknown",
   } = input;
   const notes: string[] = [];
@@ -120,17 +129,17 @@ export function ecoLLM(input: EcoLLMInput): EcoLLMRecommendation {
     }
   }
 
-  if (ecoMode) {
+  if (trimMode) {
     const before = tier;
     tier = downshift(tier);
     shouldCache = true;
     if (tier !== before) {
       notes.push(
-        "Eco mode: chose a smaller model tier to reduce compute and cost.",
+        "Trim mode: chose a smaller model tier to reduce compute and cost.",
       );
     } else {
       notes.push(
-        "Eco mode: already at the smallest sensible tier; caching is enabled.",
+        "Trim mode: already at the smallest sensible tier; caching is enabled.",
       );
     }
   }
@@ -150,4 +159,11 @@ export function ecoLLM(input: EcoLLMInput): EcoLLMRecommendation {
     notes,
     ...(suggestedModels ? { suggestedModels } : {}),
   };
+}
+
+/** Preferred Trimference name for the local model-tier advisor. */
+export function trimInference(
+  input: TrimInferenceInput,
+): TrimInferenceRecommendation {
+  return ecoLLM(input);
 }

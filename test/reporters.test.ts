@@ -1,23 +1,21 @@
-import { describe, it, expect } from "vitest";
-import { scan } from "../src/scanner.js";
-import { renderTerminalReport } from "../src/reporters/terminalReporter.js";
-import { renderMarkdownReport } from "../src/reporters/markdownReporter.js";
-import { renderJsonReport } from "../src/reporters/jsonReporter.js";
+import { describe, expect, it } from "vitest";
 import { suggestedFirstPass } from "../src/impact.js";
+import { renderJsonReport } from "../src/reporters/jsonReporter.js";
+import { renderMarkdownReport } from "../src/reporters/markdownReporter.js";
+import { renderTerminalReport } from "../src/reporters/terminalReporter.js";
+import { renderSarifReport } from "../src/reporters/sarifReporter.js";
+import { scan } from "../src/scanner.js";
 import type { Finding, ScanResult, WasteCategory } from "../src/types.js";
 
 const EXAMPLE_PATH = "examples/wasteful-ai-app";
-
-// picocolors emits ANSI color codes when it detects a CI environment, which
-// splits styled labels (e.g. `Rule:`) from their values. Strip them so terminal
-// assertions test the rendered text, not the coloring.
 // eslint-disable-next-line no-control-regex
 const ANSI = /\x1b\[[0-9;]*m/g;
-function terminalText(result: ScanResult): string {
-  return renderTerminalReport(result).replace(ANSI, "");
+
+function terminal(result: ScanResult, options = {}): string {
+  return renderTerminalReport(result, options).replace(ANSI, "");
 }
 
-function makeFinding(overrides: Partial<Finding>): Finding {
+function makeFinding(overrides: Partial<Finding> = {}): Finding {
   return {
     ruleId: "no-token-limit",
     title: "No obvious output token limit",
@@ -25,6 +23,7 @@ function makeFinding(overrides: Partial<Finding>): Finding {
     wasteCategory: "unbounded-generation",
     filePath: "lib/a.ts",
     line: 1,
+    snippet: "await client.responses.create({ input });",
     message: "msg",
     recommendation: "rec",
     fixRecipe: ["one", "two", "three", "four"],
@@ -43,18 +42,23 @@ function makeFinding(overrides: Partial<Finding>): Finding {
 
 function makeResult(findings: Finding[]): ScanResult {
   const byCategory: Partial<Record<WasteCategory, number>> = {};
-  for (const f of findings) {
-    byCategory[f.wasteCategory] = (byCategory[f.wasteCategory] ?? 0) + 1;
+  for (const finding of findings) {
+    byCategory[finding.wasteCategory] =
+      (byCategory[finding.wasteCategory] ?? 0) + 1;
   }
   return {
     summary: {
       filesScanned: 1,
+      durationMs: 1,
       totalFindings: findings.length,
-      high: findings.filter((f) => f.severity === "high").length,
-      medium: findings.filter((f) => f.severity === "medium").length,
-      low: findings.filter((f) => f.severity === "low").length,
+      high: findings.filter((finding) => finding.severity === "high").length,
+      medium: findings.filter((finding) => finding.severity === "medium").length,
+      low: findings.filter((finding) => finding.severity === "low").length,
       averageImpactScore: 50,
-      overallImpactScore: 50,
+      overallImpactScore: findings.length * 4,
+      priorityPoints: findings.length,
+      baselineSuppressed: 0,
+      ruleErrors: [],
       topFindings: findings.slice(0, 3),
       findingsByRule: {},
       findingsByFile: {},
@@ -67,190 +71,101 @@ function makeResult(findings: Finding[]): ScanResult {
 }
 
 describe("reporters", () => {
-  it("terminal report includes score, category breakdown, and disclaimer", async () => {
-    const result = await scan({ path: EXAMPLE_PATH });
-    const text = terminalText(result);
-    expect(text).toContain("Estimated avoidable compute waste score");
-    expect(text).toContain("Findings by waste category");
-    expect(text).toContain("Top fix opportunities");
-    expect(text).toContain("does not measure exact emissions");
+  it("terminal report is compact, evidence-first, and avoids impact measurement", async () => {
+    const text = terminal(await scan({ path: EXAMPLE_PATH }));
+    expect(text).toContain("efficiency review");
+    expect(text).toMatch(/\d+ high · \d+ medium · \d+ low/);
+    expect(text).toContain("Safeguards to review");
+    expect(text).toContain("Issue:");
+    expect(text).toContain("Fix:");
+    expect(text).not.toContain("waste score");
+    expect(text).not.toContain("carbon high");
   });
 
-  it("markdown report includes tracker, category table, and top fix opportunities", async () => {
+  it("markdown uses clickable evidence rows and collapsed details", async () => {
     const result = await scan({ path: EXAMPLE_PATH });
-    const md = renderMarkdownReport(result);
-    expect(md).toContain("# EcoLint AI Report");
-    expect(md).toContain("## AI Waste Impact Tracker");
-    expect(md).toContain("Estimated avoidable compute waste score");
-    expect(md).toContain("## Findings by Waste Category");
-    expect(md).toContain("## Top Fix Opportunities");
-    expect(md).toContain("Fix recipe");
-    expect(md).toContain("does not measure exact emissions");
+    const markdown = renderMarkdownReport(result);
+    expect(markdown).toContain("# Trimference Efficiency Review");
+    expect(markdown).toContain("| High | Medium | Low | Baseline hidden |");
+    expect(markdown).toContain("## Safeguards to review");
+    expect(markdown).toContain("<details>");
+    expect(markdown).toContain("#L");
+    expect(markdown).not.toContain("carbon high");
   });
 
-  it("json report is valid JSON and includes the category summary", async () => {
-    const result = await scan({ path: EXAMPLE_PATH });
-    const json = renderJsonReport(result);
-    const parsed = JSON.parse(json) as {
-      summary: {
-        overallImpactScore: number;
-        findingsByCategory: Record<string, number>;
-        topCategory: string | null;
-        suggestedFirstPass: string[];
-      };
+  it("JSON exposes a versioned automation schema", async () => {
+    const parsed = JSON.parse(renderJsonReport(await scan({ path: EXAMPLE_PATH }))) as {
+      schemaVersion: number;
+      summary: { priorityPoints: number; baselineSuppressed: number };
       disclaimer: string;
-      findings: Array<{ wasteCategory: string; fixRecipe: string[] }>;
+      findings: Array<{
+        impact?: unknown;
+        operationalImpact: { computeRisk: string; costRisk: string; confidence: string };
+      }>;
     };
-    expect(typeof parsed.summary.overallImpactScore).toBe("number");
-    expect(parsed.summary.findingsByCategory).toBeTruthy();
-    expect(Object.keys(parsed.summary.findingsByCategory).length).toBeGreaterThan(0);
-    expect(parsed.disclaimer).toMatch(/does not measure exact emissions/);
-    expect(parsed.findings.every((f) => f.wasteCategory && f.fixRecipe.length > 0)).toBe(
-      true,
-    );
+    expect(parsed.schemaVersion).toBe(2);
+    expect(parsed.summary.priorityPoints).toBeGreaterThan(0);
+    expect(parsed.summary.baselineSuppressed).toBe(0);
+    expect(parsed.disclaimer).toMatch(/not measured usage/);
+    expect(parsed.findings.length).toBeGreaterThan(0);
+    expect(parsed.findings[0]!.impact).toBeUndefined();
+    expect(parsed.findings[0]!.operationalImpact.confidence).toBeTruthy();
   });
 
-  it("empty results still render a clean terminal report", () => {
-    const text = terminalText(makeResult([]));
-    expect(text).toContain("No obvious AI compute waste patterns found");
+  it("SARIF maps findings to code-scanning locations", async () => {
+    const parsed = JSON.parse(renderSarifReport(await scan({ path: EXAMPLE_PATH }))) as {
+      version: string;
+      runs: Array<{ results: Array<{ ruleId: string; locations: unknown[] }> }>;
+    };
+    expect(parsed.version).toBe("2.1.0");
+    expect(parsed.runs[0]!.results.length).toBeGreaterThan(0);
+    expect(parsed.runs[0]!.results[0]!.ruleId).toBeTruthy();
+    expect(parsed.runs[0]!.results[0]!.locations).toHaveLength(1);
   });
 
-  describe("Suggested first pass", () => {
-    it("terminal output includes a Suggested first pass section", async () => {
-      const result = await scan({ path: EXAMPLE_PATH });
-      const text = terminalText(result);
-      expect(text).toContain("Suggested first pass:");
-      expect(text).toContain("Add caching around repeated model calls.");
-    });
-
-    it("markdown output includes a Suggested first pass section", async () => {
-      const result = await scan({ path: EXAMPLE_PATH });
-      const md = renderMarkdownReport(result);
-      expect(md).toContain("## Suggested first pass");
-    });
-
-    it("json summary includes suggestedFirstPass", async () => {
-      const result = await scan({ path: EXAMPLE_PATH });
-      const parsed = JSON.parse(renderJsonReport(result)) as {
-        summary: { suggestedFirstPass: string[] };
-      };
-      expect(Array.isArray(parsed.summary.suggestedFirstPass)).toBe(true);
-      expect(parsed.summary.suggestedFirstPass.length).toBeGreaterThan(0);
-      expect(parsed.summary.suggestedFirstPass.length).toBeLessThanOrEqual(4);
-    });
-
-    it("dedupes and prioritizes actions from the top findings", () => {
-      const actions = suggestedFirstPass([
-        makeFinding({ ruleId: "no-llm-cache", severity: "high" }),
-        makeFinding({ ruleId: "no-llm-cache", severity: "high", line: 5 }),
-        makeFinding({ ruleId: "repeated-embeddings", severity: "high", line: 9 }),
-      ]);
-      expect(actions).toEqual([
-        "Add caching around repeated model calls.",
-        "Persist embeddings instead of regenerating unchanged text.",
-      ]);
-    });
+  it("renders a clean empty result", () => {
+    const text = terminal(makeResult([]));
+    expect(text).toContain("No obvious AI efficiency safeguards are missing");
   });
 
-  describe("--max-findings and --summary", () => {
-    function ruleLineCount(text: string): number {
-      return text
-        .split("\n")
-        .filter((l) => l.trim().startsWith("Rule: ")).length;
-    }
-
-    it("default terminal caps detailed findings at 10", async () => {
-      const result = await scan({ path: EXAMPLE_PATH });
-      expect(result.summary.totalFindings).toBeGreaterThan(10);
-      const text = terminalText(result);
-      expect(ruleLineCount(text)).toBe(10);
-      expect(text).toContain("more findings. Use --markdown, --json, or --max-findings 0");
-    });
-
-    it("--max-findings 0 shows all detailed findings", async () => {
-      const result = await scan({ path: EXAMPLE_PATH });
-      const text = renderTerminalReport(result, { maxFindings: 0 }).replace(ANSI, "");
-      expect(ruleLineCount(text)).toBe(result.summary.totalFindings);
-      expect(text).not.toContain("more findings. Use --markdown");
-    });
-
-    it("--max-findings 3 caps detailed findings at 3", async () => {
-      const result = await scan({ path: EXAMPLE_PATH });
-      const text = renderTerminalReport(result, { maxFindings: 3 }).replace(ANSI, "");
-      expect(ruleLineCount(text)).toBe(3);
-    });
-
-    it("--summary shows the high-level report but no detailed findings", async () => {
-      const result = await scan({ path: EXAMPLE_PATH });
-      const text = renderTerminalReport(result, { summary: true }).replace(ANSI, "");
-      expect(text).toContain("Estimated avoidable compute waste score");
-      expect(text).toContain("Findings by waste category");
-      expect(text).toContain("Top fix opportunities");
-      expect(text).toContain("Suggested first pass");
-      expect(text).toContain("does not measure exact emissions");
-      expect(ruleLineCount(text)).toBe(0);
-      expect(text).not.toContain("Fix recipe:");
-    });
-
-    it("markdown and JSON stay fully detailed regardless of the terminal cap", async () => {
-      const result = await scan({ path: EXAMPLE_PATH });
-      const md = renderMarkdownReport(result);
-      const detailBlocks = md.split("\n").filter((l) => l.startsWith("### ")).length;
-      expect(detailBlocks).toBe(result.summary.totalFindings);
-
-      const parsed = JSON.parse(renderJsonReport(result)) as {
-        findings: unknown[];
-      };
-      expect(parsed.findings.length).toBe(result.summary.totalFindings);
-    });
+  it("shows suggested first-pass actions in all report formats", async () => {
+    const result = await scan({ path: EXAMPLE_PATH });
+    expect(terminal(result)).toContain("Suggested first pass:");
+    expect(renderMarkdownReport(result)).toContain("## Suggested first pass");
+    const json = JSON.parse(renderJsonReport(result)) as {
+      summary: { suggestedFirstPass: string[] };
+    };
+    expect(json.summary.suggestedFirstPass.length).toBeGreaterThan(0);
   });
 
-  describe("terminal noise control", () => {
-    it("caps fix recipes at 3 bullets and defers the rest to markdown/JSON", async () => {
-      const result = await scan({ path: EXAMPLE_PATH });
-      const text = terminalText(result);
-      expect(text).toContain("...plus 1 more in markdown/JSON output.");
-      // A 4th recipe step should not appear in the terminal output.
-      expect(text).not.toContain(
-        "Skip caching for highly personalized, sensitive, or rapidly changing outputs.",
-      );
-    });
+  it("caps terminal details at 8 by default", async () => {
+    const result = await scan({ path: EXAMPLE_PATH });
+    const text = terminal(result);
+    expect((text.match(/\[(HIGH|MEDIUM|LOW) · \w+ CONFIDENCE\]/g) ?? []).length).toBe(8);
+    expect(text).toContain("Use --markdown, --json, or --max-findings 0");
+  });
 
-    it("markdown keeps the full fix recipe", async () => {
-      const result = await scan({ path: EXAMPLE_PATH });
-      const md = renderMarkdownReport(result);
-      expect(md).toContain(
-        "Skip caching for highly personalized, sensitive, or rapidly changing outputs.",
-      );
-    });
+  it("supports all, custom, and summary-only terminal detail modes", async () => {
+    const result = await scan({ path: EXAMPLE_PATH });
+    const all = terminal(result, { maxFindings: 0 });
+    const three = terminal(result, { maxFindings: 3 });
+    const summary = terminal(result, { summary: true });
+    const count = (text: string): number =>
+      (text.match(/\[(HIGH|MEDIUM|LOW) · \w+ CONFIDENCE\]/g) ?? []).length;
+    expect(count(all)).toBe(result.findings.length);
+    expect(count(three)).toBe(3);
+    expect(count(summary)).toBe(0);
+  });
 
-    it("labels multiple same-rule findings in one file", async () => {
-      const result = await scan({ path: EXAMPLE_PATH });
-      const text = terminalText(result);
-      // route.ts has two no-llm-cache findings.
-      expect(text).toContain("(2 in this file)");
-    });
+  it("keeps complete recipes in collapsed Markdown details", () => {
+    const markdown = renderMarkdownReport(makeResult([makeFinding()]));
+    expect(markdown).toContain("4. four");
+  });
 
-    it("shows related-finding awareness for multi-finding files", async () => {
-      const result = await scan({ path: EXAMPLE_PATH });
-      const text = terminalText(result);
-      expect(text).toContain("Also flagged in this file:");
-    });
-
-    it("caps no-token-limit at 2 per file in the terminal", () => {
-      const findings = [
-        makeFinding({ line: 1 }),
-        makeFinding({ line: 2 }),
-        makeFinding({ line: 3 }),
-      ];
-      const text = terminalText(makeResult(findings));
-      // Only two of the three should render as detailed findings; count the
-      // per-finding "Rule:" lines rather than substring-matching styled text.
-      const shown = text
-        .split("\n")
-        .filter((line) => line.trim() === "Rule: no-token-limit").length;
-      expect(shown).toBe(2);
-      expect(text).toContain("...plus 1 more no-token-limit findings in this file.");
-    });
+  it("shows baseline suppression in clean reports", () => {
+    const result = makeResult([]);
+    result.summary.baselineSuppressed = 3;
+    expect(terminal(result)).toContain("3 baseline finding(s) hidden");
+    expect(renderMarkdownReport(result)).toContain("3 accepted baseline finding(s)");
   });
 });

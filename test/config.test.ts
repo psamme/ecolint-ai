@@ -4,24 +4,26 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFile } from "node:child_process";
+import { createRequire } from "node:module";
 import { promisify } from "node:util";
 import { loadConfig } from "../src/config.js";
 import { scan } from "../src/scanner.js";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
+const tsxImport = createRequire(import.meta.url).resolve("tsx");
 
 const WASTEFUL = `
   const a = await openai.chat.completions.create({ model: "gpt-4o", messages: user.messages });
 `;
 
 async function makeProject(config?: string): Promise<string> {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "ecolint-cfg-"));
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "trimference-cfg-"));
   await fs.mkdir(path.join(dir, "lib"), { recursive: true });
   await fs.writeFile(path.join(dir, "lib", "a.ts"), WASTEFUL);
   await fs.writeFile(path.join(dir, "lib", "vendor-thing.ts"), WASTEFUL);
   if (config) {
-    await fs.writeFile(path.join(dir, "ecolint.config.json"), config);
+    await fs.writeFile(path.join(dir, "trimference.config.json"), config);
   }
   return dir;
 }
@@ -53,6 +55,16 @@ describe("config loading", () => {
     expect(config.provider).toBe("openai");
   });
 
+  it("accepts the pre-rename config filename during migration", async () => {
+    const dir = await makeProject();
+    dirs.push(dir);
+    await fs.writeFile(
+      path.join(dir, "ecolint.config.json"),
+      JSON.stringify({ minSeverity: "high" }),
+    );
+    expect((await loadConfig(dir)).minSeverity).toBe("high");
+  });
+
   it("throws a clear error on invalid config", async () => {
     const dir = await makeProject(JSON.stringify({ minSeverity: "nonsense" }));
     dirs.push(dir);
@@ -79,6 +91,16 @@ describe("config loading", () => {
       true,
     );
   });
+
+  it("ignoredPaths supports glob patterns", async () => {
+    const dir = await makeProject();
+    dirs.push(dir);
+    const filtered = await scan({ path: dir, ignoredPaths: ["**/vendor-*.ts"] });
+    expect(filtered.summary.filesScanned).toBe(1);
+    expect(filtered.findings.every((finding) => !finding.filePath.includes("vendor"))).toBe(
+      true,
+    );
+  });
 });
 
 describe("CLI flags override config", () => {
@@ -89,8 +111,8 @@ describe("CLI flags override config", () => {
 
   async function runCli(cwd: string, args: string[]): Promise<string> {
     const { stdout } = await execFileAsync(
-      "npx",
-      ["tsx", path.join(repoRoot, "src", "cli.ts"), ...args],
+      process.execPath,
+      ["--import", tsxImport, path.join(repoRoot, "src", "cli.ts"), ...args],
       { cwd },
     );
     return stdout;
@@ -114,5 +136,27 @@ describe("CLI flags override config", () => {
     const configuredFindings = JSON.parse(configured).findings.length as number;
     const overriddenFindings = JSON.parse(overridden).findings.length as number;
     expect(overriddenFindings).toBeGreaterThan(configuredFindings);
+  }, 30000);
+
+  it("--fail-on exits 2 when the threshold is met", async () => {
+    const dir = await makeProject();
+    dirs.push(dir);
+    await expect(
+      execFileAsync(
+        process.execPath,
+        [
+          "--import",
+          tsxImport,
+          path.join(repoRoot, "src", "cli.ts"),
+          "scan",
+          "--path",
+          ".",
+          "--summary",
+          "--fail-on",
+          "medium",
+        ],
+        { cwd: dir },
+      ),
+    ).rejects.toMatchObject({ code: 2 });
   }, 30000);
 });

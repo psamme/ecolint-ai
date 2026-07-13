@@ -1,6 +1,6 @@
-name: EcoLint AI (local)
+name: Trimference
 
-# Runs EcoLint AI on the example app using the repo's own source, without
+# Runs Trimference on the example app using the repo's own source, without
 # needing the package to be published to npm. Writes a Markdown report into the
 # GitHub Actions job summary, and — on pull requests — posts/updates a PR comment.
 
@@ -15,7 +15,7 @@ permissions:
   pull-requests: write
 
 jobs:
-  ecolint:
+  trimference:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -36,34 +36,39 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Dogfood the scanner
+        run: |
+          node dist/cli.js scan --path src --summary --fail-on low
+          node dist/cli.js scan --path examples/cleaner-ai-app --summary --fail-on low
+
       # Generate the report even if a prior step (e.g. tests) fails, so the
       # summary and artifact steps below always have a file to work with.
-      - name: Run EcoLint AI on the example app
+      - name: Run Trimference on the example app
         if: always()
         run: |
           node dist/cli.js scan \
             --path examples/wasteful-ai-app \
             --markdown \
-            --output ecolint-report.md
+            --output trimference-report.md
 
       - name: Publish report to job summary
         if: always()
         run: |
-          if [ -f ecolint-report.md ]; then
-            cat ecolint-report.md >> "$GITHUB_STEP_SUMMARY"
+          if [ -f trimference-report.md ]; then
+            cat trimference-report.md >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "No ecolint-report.md was generated." >> "$GITHUB_STEP_SUMMARY"
+            echo "No trimference-report.md was generated." >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Upload report artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ecolint-report
-          path: ecolint-report.md
+          name: trimference-report
+          path: trimference-report.md
           if-no-files-found: warn
 
-      # On pull requests, post or update a single EcoLint AI comment. Mirrors the
+      # On pull requests, post or update a single Trimference comment. Mirrors the
       # comment logic in action.yml (buildCommentBody in src/prComment.ts).
       - name: Post or update PR comment
         if: ${{ always() && github.event_name == 'pull_request' }}
@@ -72,14 +77,15 @@ jobs:
           github-token: ${{ github.token }}
           script: |
             const fs = require("fs");
-            const MARKER = "<!-- ecolint-ai-report -->";
+            const MARKER = "<!-- trimference-report -->";
+            const LEGACY_MARKER = "<!-- ecolint-ai-report -->";
             const MAX_LENGTH = 60000;
 
             let report;
             try {
-              report = fs.readFileSync("ecolint-report.md", "utf8").trimEnd();
+              report = fs.readFileSync("trimference-report.md", "utf8").trimEnd();
             } catch {
-              report = "# EcoLint AI Report\n\nNo report was generated.";
+              report = "# Trimference Report\n\nNo report was generated.";
             }
 
             let body;
@@ -91,7 +97,7 @@ jobs:
               const truncated = (lastNewline > 0 ? slice.slice(0, lastNewline) : slice).trimEnd();
               const note =
                 "> ⚠️ This report was truncated to fit a PR comment. " +
-                "See the full EcoLint AI report in the workflow **job summary**.";
+                "See the full Trimference report in the workflow **job summary**.";
               body = `${MARKER}\n${truncated}\n\n---\n\n${note}\n`;
             }
 
@@ -104,7 +110,9 @@ jobs:
               issue_number,
               per_page: 100,
             });
-            const existing = comments.find((c) => c.body && c.body.includes(MARKER));
+            const existing = comments.find(
+              (c) => c.body && (c.body.includes(MARKER) || c.body.includes(LEGACY_MARKER)),
+            );
 
             if (existing) {
               await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });

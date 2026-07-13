@@ -33,7 +33,7 @@ function finding(ruleId: string, line: number): Finding {
 describe("applyInlineDisables", () => {
   it("disable-next-line suppresses only the named rule on the following line", () => {
     const src = [
-      "// ecolint-disable-next-line no-llm-cache",
+      "// trimference-disable-next-line no-llm-cache",
       "const a = 1;", // line 2 -> no-llm-cache suppressed
       "const b = 2;", // line 3 -> nothing suppressed
     ].join("\n");
@@ -50,7 +50,7 @@ describe("applyInlineDisables", () => {
   });
 
   it("disable-next-line with no rule id suppresses all rules on the next line", () => {
-    const src = ["// ecolint-disable-next-line", "call();"].join("\n");
+    const src = ["// trimference-disable-next-line", "call();"].join("\n");
     const kept = applyInlineDisables(file(src), [
       finding("no-llm-cache", 2),
       finding("huge-context", 2),
@@ -58,18 +58,24 @@ describe("applyInlineDisables", () => {
     expect(kept).toHaveLength(0);
   });
 
+  it("accepts the pre-rename directive during migration", () => {
+    const src = ["// ecolint-disable-next-line", "call();"].join("\n");
+    const kept = applyInlineDisables(file(src), [finding("no-llm-cache", 2)]);
+    expect(kept).toHaveLength(0);
+  });
+
   it("disable-line suppresses findings on the same line", () => {
-    const src = "const a = call(); // ecolint-disable-line no-llm-cache";
+    const src = "const a = call(); // trimference-disable-line no-llm-cache";
     const kept = applyInlineDisables(file(src), [finding("no-llm-cache", 1)]);
     expect(kept).toHaveLength(0);
   });
 
   it("disable/enable blocks suppress a named rule across a range", () => {
     const src = [
-      "// ecolint-disable no-llm-cache", // line 1
+      "// trimference-disable no-llm-cache", // line 1
       "a();", // 2 suppressed
       "b();", // 3 suppressed
-      "// ecolint-enable no-llm-cache", // line 4
+      "// trimference-enable no-llm-cache", // line 4
       "c();", // 5 not suppressed
     ].join("\n");
     const findings = [
@@ -94,9 +100,9 @@ describe("applyInlineDisables", () => {
 describe("inline disables end-to-end via runRules", () => {
   it("suppresses a real finding on the next line", () => {
     const src = [
-      "const a = { messages: conversationHistory };", // huge-context fires
-      "// ecolint-disable-next-line huge-context",
-      "const b = { messages: fullConversation };", // suppressed
+      "await client.messages.create({ messages: conversationHistory });", // fires
+      "// trimference-disable-next-line huge-context",
+      "await client.messages.create({ messages: fullConversation });", // suppressed
     ].join("\n");
     const findings = runRules(file(src));
     const hc = findings.filter((f) => f.ruleId === "huge-context");

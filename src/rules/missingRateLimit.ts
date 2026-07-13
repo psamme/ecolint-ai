@@ -3,7 +3,7 @@ import { makeImpact } from "../impact.js";
 import {
   LLM_CALL_PATTERNS,
   createFinding,
-  findMatches,
+  findCodeMatchesInFile,
 } from "./helpers.js";
 
 /** Patterns suggesting this file is a public request handler / API route. */
@@ -29,7 +29,6 @@ const RATE_LIMIT_TERMS: Array<string | RegExp> = [
   "throttle",
   "upstash",
   "redis",
-  "middleware",
 ];
 
 const FIX_RECIPE = [
@@ -41,7 +40,7 @@ const FIX_RECIPE = [
 
 function looksLikeRoute(file: SourceFile): boolean {
   if (ROUTE_PATH_HINTS.some((hint) => file.path.includes(hint))) return true;
-  return findMatches(file.content, ROUTE_INDICATORS).length > 0;
+  return findCodeMatchesInFile(file, ROUTE_INDICATORS).length > 0;
 }
 
 export const missingRateLimitRule: Rule = {
@@ -57,11 +56,11 @@ export const missingRateLimitRule: Rule = {
   scan(file: SourceFile): Finding[] {
     if (!looksLikeRoute(file)) return [];
 
-    const llmCalls = findMatches(file.content, LLM_CALL_PATTERNS);
+    const llmCalls = findCodeMatchesInFile(file, LLM_CALL_PATTERNS);
     if (llmCalls.length === 0) return [];
 
     // If any rate-limit/quota term appears in the file, assume it's covered.
-    if (findMatches(file.content, RATE_LIMIT_TERMS).length > 0) return [];
+    if (findCodeMatchesInFile(file, RATE_LIMIT_TERMS).length > 0) return [];
 
     // Report once per file, anchored on the first model call.
     return [

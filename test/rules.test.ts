@@ -25,8 +25,8 @@ describe("no-llm-cache", () => {
       file(`const r = await openai.chat.completions.create({ model: "gpt-4o" });`),
     );
     expect(f.length).toBe(1);
-    expect(f[0]!.severity).toBe("high");
-    expect(f[0]!.impact.score).toBe(85);
+    expect(f[0]!.severity).toBe("medium");
+    expect(f[0]!.impact.score).toBe(55);
   });
 
   it("does not flag when caching terms are nearby", () => {
@@ -45,6 +45,13 @@ describe("no-llm-cache", () => {
     );
     expect(f[0]!.severity).toBe("low");
   });
+
+  it("recognizes common Python model invocation patterns", () => {
+    const findings = noLlmCacheRule.scan(
+      file(`response = client.models.generate_content(model="gemini", contents=prompt)`, "app.py"),
+    );
+    expect(findings).toHaveLength(1);
+  });
 });
 
 describe("huge-context", () => {
@@ -56,9 +63,9 @@ describe("huge-context", () => {
     expect(f[0]!.ruleId).toBe("huge-context");
   });
 
-  it("flags messages: user.messages", () => {
-    const f = hugeContextRule.scan(file(`{ messages: user.messages }`));
-    expect(f.length).toBe(1);
+  it("does not flag context-shaped data without a model call", () => {
+    const f = hugeContextRule.scan(file(`const payload = { messages: user.messages };`));
+    expect(f).toHaveLength(0);
   });
 });
 
@@ -97,17 +104,16 @@ describe("expensive-model-simple-task", () => {
     expect(finding!.message).toContain("gpt-4o-mini");
   });
 
-  it("uses the configured provider fallback when the model provider is unclear", () => {
-    // "sonnet" alone doesn't reveal the provider from the slug; config supplies it.
+  it("does not treat a Sonnet model as top-tier by name alone", () => {
     const src = `
       // classify sentiment
       const model = "sonnet";
       await client.messages.create({ model });
     `;
-    const [finding] = expensiveModelSimpleTaskRule.scan(file(src), {
+    const findings = expensiveModelSimpleTaskRule.scan(file(src), {
       provider: "anthropic",
     });
-    expect(finding!.message).toContain("claude-3-5-haiku");
+    expect(findings).toHaveLength(0);
   });
 });
 
@@ -155,14 +161,24 @@ describe("image-generation-loop", () => {
 
 describe("frequent-cron", () => {
   it("flags an every-minute cron expression", () => {
-    const f = frequentCronRule.scan(file(`export const schedule = "* * * * *";`));
+    const f = frequentCronRule.scan(file(`
+      export const schedule = "* * * * *";
+      await openai.responses.create({ input: "maintenance" });
+    `));
     expect(f.length).toBe(1);
     expect(f[0]!.ruleId).toBe("frequent-cron");
   });
 
   it("flags a short setInterval", () => {
-    const f = frequentCronRule.scan(file(`setInterval(check, 5000);`));
+    const f = frequentCronRule.scan(file(`
+      setInterval(check, 5000);
+      await openai.responses.create({ input: "maintenance" });
+    `));
     expect(f.length).toBe(1);
+  });
+
+  it("does not flag frequent non-AI background work", () => {
+    expect(frequentCronRule.scan(file(`setInterval(check, 5000);`))).toHaveLength(0);
   });
 });
 
@@ -305,6 +321,16 @@ const ALL_RULES = [
 ];
 
 describe("rule wiring", () => {
+  it("does not treat comments, strings, or regex definitions as executable calls", () => {
+    const src = `
+      // await openai.chat.completions.create({ model: "gpt-4o" });
+      const example = "openai.responses.create";
+      const pattern = /messages\\.create\\s*\\(/i;
+    `;
+    const findings = ALL_RULES.flatMap((rule) => rule.scan(file(src)));
+    expect(findings).toHaveLength(0);
+  });
+
   it("all rules expose the expected shape", () => {
     for (const rule of ALL_RULES) {
       expect(rule.id).toBeTruthy();
@@ -325,7 +351,10 @@ describe("rule wiring", () => {
   it("every finding has a waste category and a non-empty fix recipe", () => {
     const samples: Array<[(typeof ALL_RULES)[number], string]> = [
       [noLlmCacheRule, `await openai.chat.completions.create({ model: "gpt-4o" });`],
-      [hugeContextRule, `{ messages: conversationHistory }`],
+      [
+        hugeContextRule,
+        `await client.messages.create({ messages: conversationHistory });`,
+      ],
       [
         expensiveModelSimpleTaskRule,
         `// classify sentiment\nawait openai.chat.completions.create({ model: "gpt-4o" });`,
@@ -338,7 +367,10 @@ describe("rule wiring", () => {
         imageGenerationLoopRule,
         `while (n < 3) { await openai.images.generate({ prompt }); }`,
       ],
-      [frequentCronRule, `const schedule = "* * * * *";`],
+      [
+        frequentCronRule,
+        `const schedule = "* * * * *"; await openai.responses.create({ input: "work" });`,
+      ],
       [noTokenLimitRule, `await openai.chat.completions.create({ model: "gpt-4o" });`],
       [
         sequentialLlmCallsRule,

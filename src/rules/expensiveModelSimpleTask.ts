@@ -2,8 +2,10 @@ import type { Finding, Rule, RuleContext, SourceFile } from "../types.js";
 import { makeImpact } from "../impact.js";
 import { detectProvider, suggestSmallerModels } from "../models.js";
 import {
+  LLM_CALL_PATTERNS,
   createFinding,
   dedupeFindings,
+  findCodeMatchesInFile,
   findMatches,
   getNearbyText,
   hasNearby,
@@ -14,7 +16,6 @@ const LARGE_MODEL_PATTERNS: Array<string | RegExp> = [
   "opus",
   "claude-3-opus",
   "claude-opus",
-  "sonnet",
 ];
 
 /**
@@ -87,8 +88,11 @@ export const expensiveModelSimpleTaskRule: Rule = {
   fixRecipe: FIX_RECIPE,
   scan(file: SourceFile, context?: RuleContext): Finding[] {
     const findings: Finding[] = [];
+    const calls = findCodeMatchesInFile(file, LLM_CALL_PATTERNS);
+    if (calls.length === 0) return findings;
 
     for (const match of findMatches(file.content, LARGE_MODEL_PATTERNS)) {
+      if (!calls.some((call) => Math.abs(call.line - match.line) <= 30)) continue;
       // Don't flag already right-sized models like gpt-4o-mini.
       if (isDownsizedVariant(file.content, match.index)) continue;
       // Only flag when a simple-task word appears within ~30 lines.
